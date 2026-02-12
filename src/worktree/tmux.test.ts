@@ -842,4 +842,15 @@ describe("sendKeys", () => {
 			expect(agentErr.agentName).toBe("my-agent");
 		}
 	});
+
+	test("sends Enter with empty string (follow-up submission)", async () => {
+		spawnSpy.mockImplementation(() => mockSpawnResult("", "", 0));
+
+		await sendKeys("overstory-agent", "");
+
+		expect(spawnSpy).toHaveBeenCalledTimes(1);
+		const callArgs = spawnSpy.mock.calls[0] as unknown[];
+		const cmd = callArgs[0] as string[];
+		expect(cmd).toEqual(["tmux", "send-keys", "-t", "overstory-agent", "", "Enter"]);
+	});
 });

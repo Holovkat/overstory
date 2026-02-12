@@ -11,6 +11,7 @@ import { resolveProjectRoot } from "../config.ts";
 import { MailError, ValidationError } from "../errors.ts";
 import { createMailClient } from "../mail/client.ts";
 import { createMailStore } from "../mail/store.ts";
+import { MAIL_MESSAGE_TYPES } from "../types.ts";
 import type { MailMessage } from "../types.ts";
 import { nudgeAgent } from "./nudge.ts";
 
@@ -70,8 +71,11 @@ function formatMessage(msg: MailMessage): string {
 		`${readMarker} ${msg.id}  From: ${msg.from} → To: ${msg.to}${priorityTag}`,
 		`  Subject: ${msg.subject}  (${msg.type})`,
 		`  ${msg.body}`,
-		`  ${msg.createdAt}`,
 	];
+	if (msg.payload !== null) {
+		lines.push(`  Payload: ${msg.payload}`);
+	}
+	lines.push(`  ${msg.createdAt}`);
 	return lines.join("\n");
 }
 
@@ -100,15 +104,15 @@ async function handleSend(args: string[], cwd: string): Promise<void> {
 	const subject = getFlag(args, "--subject");
 	const body = getFlag(args, "--body");
 	const from = getFlag(args, "--agent") ?? getFlag(args, "--from") ?? "orchestrator";
-	const VALID_TYPES = ["status", "question", "result", "error"] as const;
+	const rawPayload = getFlag(args, "--payload");
 	const VALID_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 
 	const rawType = getFlag(args, "--type") ?? "status";
 	const rawPriority = getFlag(args, "--priority") ?? "normal";
 
-	if (!VALID_TYPES.includes(rawType as MailMessage["type"])) {
+	if (!MAIL_MESSAGE_TYPES.includes(rawType as MailMessage["type"])) {
 		throw new ValidationError(
-			`Invalid --type "${rawType}". Must be one of: ${VALID_TYPES.join(", ")}`,
+			`Invalid --type "${rawType}". Must be one of: ${MAIL_MESSAGE_TYPES.join(", ")}`,
 			{ field: "type", value: rawType },
 		);
 	}
@@ -122,6 +126,20 @@ async function handleSend(args: string[], cwd: string): Promise<void> {
 	const type = rawType as MailMessage["type"];
 	const priority = rawPriority as MailMessage["priority"];
 
+	// Validate JSON payload if provided
+	let payload: string | undefined;
+	if (rawPayload !== undefined) {
+		try {
+			JSON.parse(rawPayload);
+			payload = rawPayload;
+		} catch {
+			throw new ValidationError("--payload must be valid JSON", {
+				field: "payload",
+				value: rawPayload,
+			});
+		}
+	}
+
 	if (!to) {
 		throw new ValidationError("--to is required for mail send", { field: "to" });
 	}
@@ -134,7 +152,7 @@ async function handleSend(args: string[], cwd: string): Promise<void> {
 
 	const client = openClient(cwd);
 	try {
-		const id = client.send({ from, to, subject, body, type, priority });
+		const id = client.send({ from, to, subject, body, type, priority, payload });
 
 		if (hasFlag(args, "--json")) {
 			process.stdout.write(`${JSON.stringify({ id })}\n`);
@@ -324,8 +342,11 @@ Subcommands:
   send     Send a message
              --to <agent>  --subject <text>  --body <text>
              [--from <name>] [--agent <name> (alias for --from)]
-             [--type <status|question|result|error>]
-             [--priority <low|normal|high|urgent>] [--json]
+             [--type <type>] [--priority <low|normal|high|urgent>]
+             [--payload <json>] [--json]
+           Types: status, question, result, error (semantic)
+                  worker_done, merge_ready, merged, merge_failed,
+                  escalation, health_check, dispatch, assign (protocol)
   check    Check inbox (unread messages)
              [--agent <name>] [--inject] [--json]
   list     List messages with filters

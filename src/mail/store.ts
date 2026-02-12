@@ -8,10 +8,13 @@
 
 import { Database } from "bun:sqlite";
 import { MailError } from "../errors.ts";
+import { MAIL_MESSAGE_TYPES } from "../types.ts";
 import type { MailMessage } from "../types.ts";
 
 export interface MailStore {
-	insert(message: Omit<MailMessage, "read" | "createdAt">): MailMessage;
+	insert(
+		message: Omit<MailMessage, "read" | "createdAt" | "payload"> & { payload?: string | null },
+	): MailMessage;
 	getUnread(agentName: string): MailMessage[];
 	getAll(filters?: { from?: string; to?: string; unread?: boolean }): MailMessage[];
 	getById(id: string): MailMessage | null;
@@ -32,9 +35,13 @@ interface MessageRow {
 	type: string;
 	priority: string;
 	thread_id: string | null;
+	payload: string | null;
 	read: number;
 	created_at: string;
 }
+
+/** Build the CHECK constraint for message types from the runtime constant. */
+const TYPE_CHECK = `CHECK(type IN (${MAIL_MESSAGE_TYPES.map((t) => `'${t}'`).join(",")}))`;
 
 const CREATE_TABLE = `
 CREATE TABLE IF NOT EXISTS messages (
@@ -43,21 +50,26 @@ CREATE TABLE IF NOT EXISTS messages (
   to_agent TEXT NOT NULL,
   subject TEXT NOT NULL,
   body TEXT NOT NULL,
-  type TEXT NOT NULL DEFAULT 'status' CHECK(type IN ('status','question','result','error')),
+  type TEXT NOT NULL DEFAULT 'status' ${TYPE_CHECK},
   priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
   thread_id TEXT,
+  payload TEXT,
   read INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`;
 
 /**
- * Migrate an existing messages table to add CHECK constraints on type and priority.
+ * Migrate an existing messages table to the current schema.
  *
- * SQLite does not support ALTER TABLE ADD CONSTRAINT, so we must recreate the table.
- * Only runs if the table already exists without CHECK constraints.
+ * Handles two migration paths:
+ * 1. Tables without CHECK constraints → recreate with constraints
+ * 2. Tables without payload column → add payload column
+ * 3. Tables with old CHECK constraints (missing protocol types) → recreate with new types
+ *
+ * SQLite does not support ALTER TABLE ADD CONSTRAINT, so constraint changes
+ * require recreating the table.
  */
-function migrateAddCheckConstraints(db: Database): void {
-	// Check if the table already has CHECK constraints by inspecting the schema SQL
+function migrateSchema(db: Database): void {
 	const row = db
 		.prepare<{ sql: string }, []>(
 			"SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'",
@@ -67,12 +79,24 @@ function migrateAddCheckConstraints(db: Database): void {
 		// Table doesn't exist yet; CREATE TABLE IF NOT EXISTS will handle it
 		return;
 	}
-	if (row.sql.includes("CHECK")) {
-		// Constraints already present
+
+	const hasCheckConstraints = row.sql.includes("CHECK");
+	const hasPayloadColumn = row.sql.includes("payload");
+	const hasProtocolTypes = row.sql.includes("worker_done");
+
+	// If schema is fully up to date, nothing to do
+	if (hasCheckConstraints && hasPayloadColumn && hasProtocolTypes) {
 		return;
 	}
 
-	// Recreate the table with CHECK constraints, preserving existing data
+	// If only missing the payload column (has correct CHECK constraints), use ALTER TABLE
+	if (hasCheckConstraints && hasProtocolTypes && !hasPayloadColumn) {
+		db.exec("ALTER TABLE messages ADD COLUMN payload TEXT");
+		return;
+	}
+
+	// Need to recreate the table (missing CHECK constraints or needs type update)
+	const validTypes = MAIL_MESSAGE_TYPES.map((t) => `'${t}'`).join(",");
 	db.exec("BEGIN TRANSACTION");
 	try {
 		db.exec("ALTER TABLE messages RENAME TO messages_old");
@@ -83,18 +107,22 @@ CREATE TABLE messages (
   to_agent TEXT NOT NULL,
   subject TEXT NOT NULL,
   body TEXT NOT NULL,
-  type TEXT NOT NULL DEFAULT 'status' CHECK(type IN ('status','question','result','error')),
+  type TEXT NOT NULL DEFAULT 'status' CHECK(type IN (${validTypes})),
   priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
   thread_id TEXT,
+  payload TEXT,
   read INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+		// Copy data, mapping invalid types to 'status'. Old tables may not have payload column.
+		const oldHasPayload = row.sql.includes("payload");
+		const payloadSelect = oldHasPayload ? "payload" : "NULL";
 		db.exec(`
-INSERT INTO messages (id, from_agent, to_agent, subject, body, type, priority, thread_id, read, created_at)
+INSERT INTO messages (id, from_agent, to_agent, subject, body, type, priority, thread_id, payload, read, created_at)
 SELECT id, from_agent, to_agent, subject, body,
-  CASE WHEN type IN ('status','question','result','error') THEN type ELSE 'status' END,
+  CASE WHEN type IN (${validTypes}) THEN type ELSE 'status' END,
   CASE WHEN priority IN ('low','normal','high','urgent') THEN priority ELSE 'normal' END,
-  thread_id, read, created_at
+  thread_id, ${payloadSelect}, read, created_at
 FROM messages_old`);
 		db.exec("DROP TABLE messages_old");
 		db.exec("COMMIT");
@@ -134,6 +162,7 @@ function rowToMessage(row: MessageRow): MailMessage {
 		type: row.type as MailMessage["type"],
 		priority: row.priority as MailMessage["priority"],
 		threadId: row.thread_id,
+		payload: row.payload,
 		read: row.read === 1,
 		createdAt: row.created_at,
 	};
@@ -156,8 +185,8 @@ export function createMailStore(dbPath: string): MailStore {
 	db.exec("PRAGMA synchronous = NORMAL");
 	db.exec("PRAGMA busy_timeout = 5000");
 
-	// Migrate existing tables to add CHECK constraints (no-op if table is new or already migrated)
-	migrateAddCheckConstraints(db);
+	// Migrate existing tables to current schema (no-op if table is new or already migrated)
+	migrateSchema(db);
 
 	// Create schema (if table doesn't exist yet, creates with CHECK constraints)
 	db.exec(CREATE_TABLE);
@@ -175,14 +204,15 @@ export function createMailStore(dbPath: string): MailStore {
 			$type: string;
 			$priority: string;
 			$thread_id: string | null;
+			$payload: string | null;
 			$read: number;
 			$created_at: string;
 		}
 	>(`
 		INSERT INTO messages
-			(id, from_agent, to_agent, subject, body, type, priority, thread_id, read, created_at)
+			(id, from_agent, to_agent, subject, body, type, priority, thread_id, payload, read, created_at)
 		VALUES
-			($id, $from_agent, $to_agent, $subject, $body, $type, $priority, $thread_id, $read, $created_at)
+			($id, $from_agent, $to_agent, $subject, $body, $type, $priority, $thread_id, $payload, $read, $created_at)
 	`);
 
 	const getByIdStmt = db.prepare<MessageRow, { $id: string }>(`
@@ -231,9 +261,14 @@ export function createMailStore(dbPath: string): MailStore {
 	}
 
 	return {
-		insert(message: Omit<MailMessage, "read" | "createdAt">): MailMessage {
+		insert(
+			message: Omit<MailMessage, "read" | "createdAt" | "payload"> & {
+				payload?: string | null;
+			},
+		): MailMessage {
 			const id = message.id || `msg-${randomId()}`;
 			const createdAt = new Date().toISOString();
+			const payload = message.payload ?? null;
 
 			try {
 				insertStmt.run({
@@ -245,6 +280,7 @@ export function createMailStore(dbPath: string): MailStore {
 					$type: message.type,
 					$priority: message.priority,
 					$thread_id: message.threadId,
+					$payload: payload,
 					$read: 0,
 					$created_at: createdAt,
 				});
@@ -258,6 +294,7 @@ export function createMailStore(dbPath: string): MailStore {
 			return {
 				...message,
 				id,
+				payload,
 				read: false,
 				createdAt,
 			};

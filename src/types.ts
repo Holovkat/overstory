@@ -101,6 +101,39 @@ export interface AgentIdentity {
 
 // === Mail (Custom SQLite) ===
 
+/** Semantic message types (original, human-readable). */
+export type MailSemanticType = "status" | "question" | "result" | "error";
+
+/** Protocol message types for structured agent coordination. */
+export type MailProtocolType =
+	| "worker_done"
+	| "merge_ready"
+	| "merged"
+	| "merge_failed"
+	| "escalation"
+	| "health_check"
+	| "dispatch"
+	| "assign";
+
+/** All valid mail message types. */
+export type MailMessageType = MailSemanticType | MailProtocolType;
+
+/** All protocol type strings as a runtime array for CHECK constraint generation. */
+export const MAIL_MESSAGE_TYPES: readonly MailMessageType[] = [
+	"status",
+	"question",
+	"result",
+	"error",
+	"worker_done",
+	"merge_ready",
+	"merged",
+	"merge_failed",
+	"escalation",
+	"health_check",
+	"dispatch",
+	"assign",
+] as const;
+
 export interface MailMessage {
 	id: string; // "msg-" + nanoid(12)
 	from: string; // Agent name
@@ -108,10 +141,85 @@ export interface MailMessage {
 	subject: string;
 	body: string;
 	priority: "low" | "normal" | "high" | "urgent";
-	type: "status" | "question" | "result" | "error";
+	type: MailMessageType;
 	threadId: string | null; // Conversation threading
+	payload: string | null; // JSON-encoded structured data for protocol messages
 	read: boolean;
 	createdAt: string; // ISO timestamp
+}
+
+// === Mail Protocol Payloads ===
+
+/** Worker signals task completion to supervisor. */
+export interface WorkerDonePayload {
+	beadId: string;
+	branch: string;
+	exitCode: number;
+	filesModified: string[];
+}
+
+/** Supervisor signals branch is verified and ready for merge. */
+export interface MergeReadyPayload {
+	branch: string;
+	beadId: string;
+	agentName: string;
+	filesModified: string[];
+}
+
+/** Merger signals branch was merged successfully. */
+export interface MergedPayload {
+	branch: string;
+	beadId: string;
+	tier: ResolutionTier;
+}
+
+/** Merger signals merge failed, needs rework. */
+export interface MergeFailedPayload {
+	branch: string;
+	beadId: string;
+	conflictFiles: string[];
+	errorMessage: string;
+}
+
+/** Any agent escalates an issue to a higher-level decision-maker. */
+export interface EscalationPayload {
+	severity: "warning" | "error" | "critical";
+	beadId: string | null;
+	context: string;
+}
+
+/** Watchdog probes agent liveness. */
+export interface HealthCheckPayload {
+	agentName: string;
+	checkType: "liveness" | "readiness";
+}
+
+/** Coordinator dispatches work to a supervisor. */
+export interface DispatchPayload {
+	beadId: string;
+	specPath: string;
+	capability: Capability;
+	fileScope: string[];
+}
+
+/** Supervisor assigns work to a specific worker. */
+export interface AssignPayload {
+	beadId: string;
+	specPath: string;
+	workerName: string;
+	branch: string;
+}
+
+/** Maps protocol message types to their payload interfaces. */
+export interface MailPayloadMap {
+	worker_done: WorkerDonePayload;
+	merge_ready: MergeReadyPayload;
+	merged: MergedPayload;
+	merge_failed: MergeFailedPayload;
+	escalation: EscalationPayload;
+	health_check: HealthCheckPayload;
+	dispatch: DispatchPayload;
+	assign: AssignPayload;
 }
 
 // === Overlay ===

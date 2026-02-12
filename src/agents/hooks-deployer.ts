@@ -2,14 +2,74 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { AgentError } from "../errors.ts";
 
-/** Read-only capabilities that must never modify files. */
-const READ_ONLY_CAPABILITIES = new Set(["scout", "reviewer"]);
+/**
+ * Capabilities that must never modify project files.
+ * Includes read-only roles (scout, reviewer) and coordination roles (lead).
+ * Only "builder" and "merger" are allowed to modify files.
+ */
+const NON_IMPLEMENTATION_CAPABILITIES = new Set(["scout", "reviewer", "lead"]);
 
-/** Tools that read-only agents must not use. */
+/** Tools that non-implementation agents must not use. */
 const WRITE_TOOLS = ["Write", "Edit", "NotebookEdit"];
 
 /** Canonical branch names that agents must never push to directly. */
 const CANONICAL_BRANCHES = ["main", "master"];
+
+/**
+ * Bash commands that modify files and must be blocked for non-implementation agents.
+ * Each pattern is a regex fragment used inside a grep -qE check.
+ */
+const DANGEROUS_BASH_PATTERNS = [
+	"sed\\s+-i",
+	"sed\\s+--in-place",
+	"echo\\s+.*>",
+	"printf\\s+.*>",
+	"cat\\s+.*>",
+	"tee\\s",
+	"\\bvim\\b",
+	"\\bnano\\b",
+	"\\bvi\\b",
+	"\\bmv\\s",
+	"\\bcp\\s",
+	"\\brm\\s",
+	"\\bmkdir\\s",
+	"\\btouch\\s",
+	"\\bchmod\\s",
+	"\\bchown\\s",
+	">>",
+	"\\bgit\\s+add\\b",
+	"\\bgit\\s+commit\\b",
+	"\\bgit\\s+merge\\b",
+	"\\bgit\\s+push\\b",
+	"\\bgit\\s+reset\\b",
+	"\\bgit\\s+checkout\\b",
+	"\\bgit\\s+rebase\\b",
+	"\\bgit\\s+stash\\b",
+	"\\bnpm\\s+install\\b",
+	"\\bbun\\s+install\\b",
+	"\\bbun\\s+add\\b",
+];
+
+/**
+ * Bash commands that are always safe for non-implementation agents.
+ * If a command starts with any of these prefixes, it bypasses the dangerous command check.
+ * This whitelist is checked BEFORE the blocklist.
+ */
+const SAFE_BASH_PREFIXES = [
+	"overstory ",
+	"bd ",
+	"git status",
+	"git log",
+	"git diff",
+	"git show",
+	"git blame",
+	"git branch",
+	"mulch ",
+	"bun test",
+	"bun run lint",
+	"bun run typecheck",
+	"bun run biome",
+];
 
 /** Hook entry shape matching Claude Code's settings.local.json format. */
 interface HookEntry {
@@ -107,18 +167,64 @@ export function getDangerGuards(agentName: string): HookEntry[] {
 }
 
 /**
+ * Build a Bash guard script that blocks file-modifying commands for non-implementation agents.
+ *
+ * Uses a whitelist-first approach: if the command matches a known-safe prefix, it passes.
+ * Otherwise, it checks against dangerous patterns and blocks if any match.
+ *
+ * @param capability - The agent capability, included in block reason messages
+ */
+export function buildBashFileGuardScript(capability: string): string {
+	// Build the safe prefix check: if command starts with any safe prefix, allow it
+	const safePrefixChecks = SAFE_BASH_PREFIXES.map(
+		(prefix) => `if echo "$CMD" | grep -qE '^\\s*${prefix}'; then exit 0; fi;`,
+	).join(" ");
+
+	// Build the dangerous pattern check
+	const dangerPattern = DANGEROUS_BASH_PATTERNS.join("|");
+
+	const script = [
+		"read -r INPUT;",
+		// Extract command value from JSON
+		'CMD=$(echo "$INPUT" | sed \'s/.*"command":"\\([^"]*\\)".*/\\1/\');',
+		// First: whitelist safe commands
+		safePrefixChecks,
+		// Then: check for dangerous patterns
+		`if echo "$CMD" | grep -qE '${dangerPattern}'; then`,
+		`  echo '{"decision":"block","reason":"${capability} agents cannot modify files — this command is not allowed"}';`,
+		"  exit 0;",
+		"fi;",
+	].join(" ");
+	return script;
+}
+
+/**
  * Generate capability-specific PreToolUse guards.
  *
- * - scout/reviewer: block Write, Edit, NotebookEdit
- * - builder/lead/merger: no additional capability-specific guards
+ * Non-implementation capabilities (scout, reviewer, lead) get:
+ * - Write, Edit, NotebookEdit tool blocks
+ * - Bash file-modification command guards (sed -i, echo >, mv, rm, etc.)
+ *
+ * Implementation capabilities (builder, merger) get no additional guards
+ * beyond the universal danger guards from getDangerGuards().
  *
  * Note: All capabilities also receive Bash danger guards via getDangerGuards().
  */
 export function getCapabilityGuards(capability: string): HookEntry[] {
-	if (READ_ONLY_CAPABILITIES.has(capability)) {
-		return WRITE_TOOLS.map((tool) =>
-			blockGuard(tool, `${capability} agents are read-only — ${tool} is not allowed`),
+	if (NON_IMPLEMENTATION_CAPABILITIES.has(capability)) {
+		const toolGuards = WRITE_TOOLS.map((tool) =>
+			blockGuard(tool, `${capability} agents cannot modify files — ${tool} is not allowed`),
 		);
+		const bashFileGuard: HookEntry = {
+			matcher: "Bash",
+			hooks: [
+				{
+					type: "command",
+					command: buildBashFileGuardScript(capability),
+				},
+			],
+		};
+		return [...toolGuards, bashFileGuard];
 	}
 	return [];
 }

@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MailError } from "../errors.ts";
-import { type MailClient, createMailClient } from "./client.ts";
+import type { WorkerDonePayload } from "../types.ts";
+import { type MailClient, createMailClient, parsePayload } from "./client.ts";
 import { type MailStore, createMailStore } from "./store.ts";
 
 describe("createMailClient", () => {
@@ -591,6 +592,171 @@ describe("createMailClient", () => {
 			expect(replyMsg?.from).toBe("agent-c");
 			// Third-party reply goes to original sender
 			expect(replyMsg?.to).toBe("agent-a");
+		});
+	});
+
+	describe("sendProtocol", () => {
+		test("sends a worker_done message with serialized payload", () => {
+			const payload: WorkerDonePayload = {
+				beadId: "beads-abc",
+				branch: "agent/builder-1",
+				exitCode: 0,
+				filesModified: ["src/foo.ts", "src/bar.ts"],
+			};
+			const id = client.sendProtocol({
+				from: "builder-1",
+				to: "lead-1",
+				subject: "Task complete",
+				body: "Implementation finished, all tests pass",
+				type: "worker_done",
+				payload,
+			});
+
+			const msg = store.getById(id);
+			expect(msg).not.toBeNull();
+			expect(msg?.type).toBe("worker_done");
+			expect(msg?.payload).toBe(JSON.stringify(payload));
+		});
+
+		test("defaults priority to normal", () => {
+			const id = client.sendProtocol({
+				from: "merger-1",
+				to: "lead-1",
+				subject: "Merged",
+				body: "Branch merged",
+				type: "merged",
+				payload: { branch: "agent/b1", beadId: "beads-xyz", tier: "clean-merge" as const },
+			});
+
+			const msg = store.getById(id);
+			expect(msg?.priority).toBe("normal");
+		});
+
+		test("respects provided priority", () => {
+			const id = client.sendProtocol({
+				from: "builder-1",
+				to: "orchestrator",
+				subject: "Escalation",
+				body: "Build failing",
+				type: "escalation",
+				priority: "urgent",
+				payload: { severity: "critical" as const, beadId: null, context: "OOM" },
+			});
+
+			const msg = store.getById(id);
+			expect(msg?.priority).toBe("urgent");
+		});
+
+		test("preserves threadId", () => {
+			const id = client.sendProtocol({
+				from: "lead-1",
+				to: "builder-1",
+				subject: "Assign task",
+				body: "Please implement feature X",
+				type: "assign",
+				threadId: "thread-dispatch-1",
+				payload: {
+					beadId: "beads-123",
+					specPath: ".overstory/specs/beads-123.md",
+					workerName: "builder-1",
+					branch: "agent/builder-1",
+				},
+			});
+
+			const msg = store.getById(id);
+			expect(msg?.threadId).toBe("thread-dispatch-1");
+		});
+	});
+
+	describe("parsePayload", () => {
+		test("parses a valid JSON payload", () => {
+			const payload: WorkerDonePayload = {
+				beadId: "beads-abc",
+				branch: "agent/builder-1",
+				exitCode: 0,
+				filesModified: ["src/foo.ts"],
+			};
+			const id = client.sendProtocol({
+				from: "builder-1",
+				to: "lead-1",
+				subject: "Done",
+				body: "Done",
+				type: "worker_done",
+				payload,
+			});
+
+			const msg = store.getById(id);
+			if (msg === null) throw new Error("expected message");
+			const parsed = parsePayload(msg, "worker_done");
+			expect(parsed).toEqual(payload);
+		});
+
+		test("returns null for message with no payload", () => {
+			const id = client.send({
+				from: "agent-a",
+				to: "orchestrator",
+				subject: "Status",
+				body: "All good",
+			});
+
+			const msg = store.getById(id);
+			if (msg === null) throw new Error("expected message");
+			const parsed = parsePayload(msg, "worker_done");
+			expect(parsed).toBeNull();
+		});
+
+		test("returns null for invalid JSON payload", () => {
+			// Manually insert a message with malformed payload via store
+			const msg = store.insert({
+				id: "msg-bad-json",
+				from: "agent-a",
+				to: "orchestrator",
+				subject: "Bad",
+				body: "Bad payload",
+				type: "worker_done",
+				priority: "normal",
+				threadId: null,
+				payload: "not valid json{{{",
+			});
+
+			const parsed = parsePayload(msg, "worker_done");
+			expect(parsed).toBeNull();
+		});
+	});
+
+	describe("checkInject with protocol messages", () => {
+		test("includes payload in injection output for protocol messages", () => {
+			const payload: WorkerDonePayload = {
+				beadId: "beads-abc",
+				branch: "agent/builder-1",
+				exitCode: 0,
+				filesModified: ["src/foo.ts"],
+			};
+			client.sendProtocol({
+				from: "builder-1",
+				to: "orchestrator",
+				subject: "Task complete",
+				body: "Implementation done",
+				type: "worker_done",
+				payload,
+			});
+
+			const result = client.checkInject("orchestrator");
+			expect(result).toContain("worker_done");
+			expect(result).toContain("Payload:");
+			expect(result).toContain("beads-abc");
+		});
+
+		test("does not include payload line for semantic messages", () => {
+			client.send({
+				from: "agent-a",
+				to: "orchestrator",
+				subject: "Status",
+				body: "All good",
+			});
+
+			const result = client.checkInject("orchestrator");
+			expect(result).not.toContain("Payload:");
 		});
 	});
 

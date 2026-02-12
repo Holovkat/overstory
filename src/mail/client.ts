@@ -7,7 +7,7 @@
  */
 
 import { MailError } from "../errors.ts";
-import type { MailMessage } from "../types.ts";
+import type { MailMessage, MailPayloadMap, MailProtocolType } from "../types.ts";
 import type { MailStore } from "./store.ts";
 
 export interface MailClient {
@@ -20,6 +20,19 @@ export interface MailClient {
 		type?: MailMessage["type"];
 		priority?: MailMessage["priority"];
 		threadId?: string;
+		payload?: string;
+	}): string;
+
+	/** Send a typed protocol message with structured payload. Returns the message ID. */
+	sendProtocol<T extends MailProtocolType>(msg: {
+		from: string;
+		to: string;
+		subject: string;
+		body: string;
+		type: T;
+		priority?: MailMessage["priority"];
+		threadId?: string;
+		payload: MailPayloadMap[T];
 	}): string;
 
 	/** Get unread messages for an agent. Marks them as read. */
@@ -42,6 +55,36 @@ export interface MailClient {
 }
 
 /**
+ * Parse a JSON payload from a mail message, returning the typed object.
+ * Returns null if the message has no payload or if parsing fails.
+ */
+export function parsePayload<T extends MailProtocolType>(
+	message: MailMessage,
+	_expectedType: T,
+): MailPayloadMap[T] | null {
+	if (message.payload === null) {
+		return null;
+	}
+	try {
+		return JSON.parse(message.payload) as MailPayloadMap[T];
+	} catch {
+		return null;
+	}
+}
+
+/** Protocol types that represent structured coordination messages. */
+const PROTOCOL_TYPES = new Set<string>([
+	"worker_done",
+	"merge_ready",
+	"merged",
+	"merge_failed",
+	"escalation",
+	"health_check",
+	"dispatch",
+	"assign",
+]);
+
+/**
  * Format messages for hook injection.
  *
  * Produces a human-readable block that gets injected into the agent's
@@ -62,6 +105,9 @@ function formatForInjection(messages: MailMessage[]): string {
 		lines.push(`--- From: ${msg.from}${priorityTag} (${msg.type}) ---`);
 		lines.push(`Subject: ${msg.subject}`);
 		lines.push(msg.body);
+		if (msg.payload !== null && PROTOCOL_TYPES.has(msg.type)) {
+			lines.push(`Payload: ${msg.payload}`);
+		}
 		lines.push(`[Reply with: overstory mail reply ${msg.id} --body "..."]`);
 		lines.push("");
 	}
@@ -87,6 +133,22 @@ export function createMailClient(store: MailStore): MailClient {
 				type: msg.type ?? "status",
 				priority: msg.priority ?? "normal",
 				threadId: msg.threadId ?? null,
+				payload: msg.payload ?? null,
+			});
+			return message.id;
+		},
+
+		sendProtocol(msg): string {
+			const message = store.insert({
+				id: "",
+				from: msg.from,
+				to: msg.to,
+				subject: msg.subject,
+				body: msg.body,
+				type: msg.type,
+				priority: msg.priority ?? "normal",
+				threadId: msg.threadId ?? null,
+				payload: JSON.stringify(msg.payload),
 			});
 			return message.id;
 		},
@@ -149,6 +211,7 @@ export function createMailClient(store: MailStore): MailClient {
 				type: original.type,
 				priority: original.priority,
 				threadId,
+				payload: null,
 			});
 			return reply.id;
 		},

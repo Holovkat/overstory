@@ -3,7 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentError } from "../errors.ts";
-import { deployHooks, getCapabilityGuards, getDangerGuards } from "./hooks-deployer.ts";
+import {
+	buildBashFileGuardScript,
+	deployHooks,
+	getCapabilityGuards,
+	getDangerGuards,
+} from "./hooks-deployer.ts";
 
 describe("deployHooks", () => {
 	let tempDir: string;
@@ -271,7 +276,7 @@ describe("deployHooks", () => {
 		}
 	});
 
-	test("scout capability adds Write/Edit/NotebookEdit and Bash guards", async () => {
+	test("scout capability adds Write/Edit/NotebookEdit and Bash file guards", async () => {
 		const worktreePath = join(tempDir, "scout-wt");
 
 		await deployHooks(worktreePath, "scout-agent", "scout");
@@ -282,22 +287,24 @@ describe("deployHooks", () => {
 		const preToolUse = parsed.hooks.PreToolUse;
 
 		// Guards appear before the base logging hook
-		const bashGuard = preToolUse.find((h: { matcher: string }) => h.matcher === "Bash");
 		const writeGuard = preToolUse.find((h: { matcher: string }) => h.matcher === "Write");
 		const editGuard = preToolUse.find((h: { matcher: string }) => h.matcher === "Edit");
 		const notebookGuard = preToolUse.find((h: { matcher: string }) => h.matcher === "NotebookEdit");
 
-		expect(bashGuard).toBeDefined();
 		expect(writeGuard).toBeDefined();
 		expect(editGuard).toBeDefined();
 		expect(notebookGuard).toBeDefined();
 
 		// Verify write guard produces a block decision
 		expect(writeGuard.hooks[0].command).toContain('"decision":"block"');
-		expect(writeGuard.hooks[0].command).toContain("read-only");
+		expect(writeGuard.hooks[0].command).toContain("cannot modify files");
+
+		// Should have multiple Bash guards: danger guard + file guard
+		const bashGuards = preToolUse.filter((h: { matcher: string }) => h.matcher === "Bash");
+		expect(bashGuards.length).toBe(2); // danger guard + file guard
 	});
 
-	test("reviewer capability adds same guards as scout plus Bash guards", async () => {
+	test("reviewer capability adds same guards as scout", async () => {
 		const worktreePath = join(tempDir, "reviewer-wt");
 
 		await deployHooks(worktreePath, "reviewer-agent", "reviewer");
@@ -315,6 +322,30 @@ describe("deployHooks", () => {
 		expect(guardMatchers).toContain("Write");
 		expect(guardMatchers).toContain("Edit");
 		expect(guardMatchers).toContain("NotebookEdit");
+	});
+
+	test("lead capability gets Write/Edit/NotebookEdit guards and Bash file guards", async () => {
+		const worktreePath = join(tempDir, "lead-wt");
+
+		await deployHooks(worktreePath, "lead-agent", "lead");
+
+		const outputPath = join(worktreePath, ".claude", "settings.local.json");
+		const content = await Bun.file(outputPath).text();
+		const parsed = JSON.parse(content);
+		const preToolUse = parsed.hooks.PreToolUse;
+
+		const guardMatchers = preToolUse
+			.filter((h: { matcher: string }) => h.matcher !== "")
+			.map((h: { matcher: string }) => h.matcher);
+
+		expect(guardMatchers).toContain("Write");
+		expect(guardMatchers).toContain("Edit");
+		expect(guardMatchers).toContain("NotebookEdit");
+		expect(guardMatchers).toContain("Bash");
+
+		// Should have 2 Bash guards: danger guard + file guard
+		const bashGuards = preToolUse.filter((h: { matcher: string }) => h.matcher === "Bash");
+		expect(bashGuards.length).toBe(2);
 	});
 
 	test("builder capability gets only Bash danger guards", async () => {
@@ -335,10 +366,10 @@ describe("deployHooks", () => {
 		expect(guardMatchers).toEqual(["Bash"]);
 	});
 
-	test("lead capability gets only Bash danger guards", async () => {
-		const worktreePath = join(tempDir, "lead-wt");
+	test("merger capability gets only Bash danger guards", async () => {
+		const worktreePath = join(tempDir, "merger-wt");
 
-		await deployHooks(worktreePath, "lead-agent", "lead");
+		await deployHooks(worktreePath, "merger-agent", "merger");
 
 		const outputPath = join(worktreePath, ".claude", "settings.local.json");
 		const content = await Bun.file(outputPath).text();
@@ -381,32 +412,30 @@ describe("deployHooks", () => {
 
 		// Guards (matcher != "") should come before base (matcher == "")
 		const baseIdx = preToolUse.findIndex((h: { matcher: string }) => h.matcher === "");
-		const bashIdx = preToolUse.findIndex((h: { matcher: string }) => h.matcher === "Bash");
 		const writeIdx = preToolUse.findIndex((h: { matcher: string }) => h.matcher === "Write");
 
-		expect(bashIdx).toBeLessThan(baseIdx);
 		expect(writeIdx).toBeLessThan(baseIdx);
 	});
 });
 
 describe("getCapabilityGuards", () => {
-	test("returns guards for scout", () => {
+	test("returns 4 guards for scout (3 tool blocks + 1 bash file guard)", () => {
 		const guards = getCapabilityGuards("scout");
-		expect(guards.length).toBe(3);
+		expect(guards.length).toBe(4);
 	});
 
-	test("returns guards for reviewer", () => {
+	test("returns 4 guards for reviewer (3 tool blocks + 1 bash file guard)", () => {
 		const guards = getCapabilityGuards("reviewer");
-		expect(guards.length).toBe(3);
+		expect(guards.length).toBe(4);
+	});
+
+	test("returns 4 guards for lead (3 tool blocks + 1 bash file guard)", () => {
+		const guards = getCapabilityGuards("lead");
+		expect(guards.length).toBe(4);
 	});
 
 	test("returns empty for builder", () => {
 		const guards = getCapabilityGuards("builder");
-		expect(guards.length).toBe(0);
-	});
-
-	test("returns empty for lead", () => {
-		const guards = getCapabilityGuards("lead");
 		expect(guards.length).toBe(0);
 	});
 
@@ -418,6 +447,54 @@ describe("getCapabilityGuards", () => {
 	test("returns empty for unknown capability", () => {
 		const guards = getCapabilityGuards("unknown");
 		expect(guards.length).toBe(0);
+	});
+
+	test("scout guards include Write, Edit, NotebookEdit, and Bash matchers", () => {
+		const guards = getCapabilityGuards("scout");
+		const matchers = guards.map((g) => g.matcher);
+		expect(matchers).toContain("Write");
+		expect(matchers).toContain("Edit");
+		expect(matchers).toContain("NotebookEdit");
+		expect(matchers).toContain("Bash");
+	});
+
+	test("lead guards include Write, Edit, NotebookEdit, and Bash matchers", () => {
+		const guards = getCapabilityGuards("lead");
+		const matchers = guards.map((g) => g.matcher);
+		expect(matchers).toContain("Write");
+		expect(matchers).toContain("Edit");
+		expect(matchers).toContain("NotebookEdit");
+		expect(matchers).toContain("Bash");
+	});
+
+	test("tool block guards include capability name in reason", () => {
+		const guards = getCapabilityGuards("scout");
+		const writeGuard = guards.find((g) => g.matcher === "Write");
+		expect(writeGuard).toBeDefined();
+		expect(writeGuard?.hooks[0]?.command).toContain("scout");
+		expect(writeGuard?.hooks[0]?.command).toContain("cannot modify files");
+	});
+
+	test("lead tool block guards include lead in reason", () => {
+		const guards = getCapabilityGuards("lead");
+		const editGuard = guards.find((g) => g.matcher === "Edit");
+		expect(editGuard).toBeDefined();
+		expect(editGuard?.hooks[0]?.command).toContain("lead");
+		expect(editGuard?.hooks[0]?.command).toContain("cannot modify files");
+	});
+
+	test("bash file guard for scout includes capability in block message", () => {
+		const guards = getCapabilityGuards("scout");
+		const bashGuard = guards.find((g) => g.matcher === "Bash");
+		expect(bashGuard).toBeDefined();
+		expect(bashGuard?.hooks[0]?.command).toContain("scout agents cannot modify files");
+	});
+
+	test("bash file guard for lead includes capability in block message", () => {
+		const guards = getCapabilityGuards("lead");
+		const bashGuard = guards.find((g) => g.matcher === "Bash");
+		expect(bashGuard).toBeDefined();
+		expect(bashGuard?.hooks[0]?.command).toContain("lead agents cannot modify files");
 	});
 });
 
@@ -508,15 +585,216 @@ describe("getDangerGuards", () => {
 			const parsed = JSON.parse(content);
 			const preToolUse = parsed.hooks.PreToolUse;
 
-			const bashIdx = preToolUse.findIndex((h: { matcher: string }) => h.matcher === "Bash");
+			const firstBashIdx = preToolUse.findIndex((h: { matcher: string }) => h.matcher === "Bash");
 			const writeIdx = preToolUse.findIndex((h: { matcher: string }) => h.matcher === "Write");
 
 			// Bash danger guard should come before Write capability guard
-			expect(bashIdx).toBeLessThan(writeIdx);
+			expect(firstBashIdx).toBeLessThan(writeIdx);
 		} finally {
 			await import("node:fs/promises").then((fs) =>
 				fs.rm(tempDir, { recursive: true, force: true }),
 			);
+		}
+	});
+});
+
+describe("buildBashFileGuardScript", () => {
+	test("returns a string containing the capability name", () => {
+		const script = buildBashFileGuardScript("scout");
+		expect(script).toContain("scout agents cannot modify files");
+	});
+
+	test("reads stdin input", () => {
+		const script = buildBashFileGuardScript("scout");
+		expect(script).toContain("read -r INPUT");
+	});
+
+	test("extracts command from JSON input", () => {
+		const script = buildBashFileGuardScript("reviewer");
+		expect(script).toContain("CMD=$(");
+	});
+
+	test("includes safe prefix whitelist checks", () => {
+		const script = buildBashFileGuardScript("scout");
+		expect(script).toContain("overstory ");
+		expect(script).toContain("bd ");
+		expect(script).toContain("git status");
+		expect(script).toContain("git log");
+		expect(script).toContain("git diff");
+		expect(script).toContain("mulch ");
+		expect(script).toContain("bun test");
+		expect(script).toContain("bun run lint");
+	});
+
+	test("includes dangerous command pattern checks", () => {
+		const script = buildBashFileGuardScript("lead");
+		// File modification commands
+		expect(script).toContain("sed");
+		expect(script).toContain("tee");
+		expect(script).toContain("vim");
+		expect(script).toContain("nano");
+		expect(script).toContain("mv");
+		expect(script).toContain("cp");
+		expect(script).toContain("rm");
+		expect(script).toContain("mkdir");
+		expect(script).toContain("touch");
+		// Git modification commands
+		expect(script).toContain("git\\s+add");
+		expect(script).toContain("git\\s+commit");
+		expect(script).toContain("git\\s+push");
+	});
+
+	test("blocks sed -i for all non-implementation capabilities", () => {
+		for (const cap of ["scout", "reviewer", "lead"]) {
+			const script = buildBashFileGuardScript(cap);
+			expect(script).toContain("sed\\s+-i");
+		}
+	});
+
+	test("blocks bun install and bun add", () => {
+		const script = buildBashFileGuardScript("scout");
+		expect(script).toContain("bun\\s+install");
+		expect(script).toContain("bun\\s+add");
+	});
+
+	test("blocks npm install", () => {
+		const script = buildBashFileGuardScript("scout");
+		expect(script).toContain("npm\\s+install");
+	});
+
+	test("blocks file permission commands", () => {
+		const script = buildBashFileGuardScript("reviewer");
+		expect(script).toContain("chmod");
+		expect(script).toContain("chown");
+	});
+
+	test("blocks append redirect operator", () => {
+		const script = buildBashFileGuardScript("lead");
+		expect(script).toContain(">>");
+	});
+
+	test("safe prefix checks use exit 0 to allow", () => {
+		const script = buildBashFileGuardScript("scout");
+		// Each safe prefix should have an exit 0 to allow the command
+		expect(script).toContain("exit 0; fi;");
+	});
+
+	test("dangerous pattern check outputs block decision JSON", () => {
+		const script = buildBashFileGuardScript("reviewer");
+		expect(script).toContain('"decision":"block"');
+		expect(script).toContain("reviewer agents cannot modify files");
+	});
+});
+
+describe("structural enforcement integration", () => {
+	let tempDir: string;
+
+	beforeEach(async () => {
+		tempDir = await mkdtemp(join(tmpdir(), "overstory-structural-test-"));
+	});
+
+	afterEach(async () => {
+		await rm(tempDir, { recursive: true, force: true });
+	});
+
+	test("non-implementation agents have more guards than implementation agents", async () => {
+		const scoutPath = join(tempDir, "scout-wt");
+		const builderPath = join(tempDir, "builder-wt");
+
+		await deployHooks(scoutPath, "scout-1", "scout");
+		await deployHooks(builderPath, "builder-1", "builder");
+
+		const scoutContent = await Bun.file(join(scoutPath, ".claude", "settings.local.json")).text();
+		const builderContent = await Bun.file(
+			join(builderPath, ".claude", "settings.local.json"),
+		).text();
+
+		const scoutPreToolUse = JSON.parse(scoutContent).hooks.PreToolUse;
+		const builderPreToolUse = JSON.parse(builderContent).hooks.PreToolUse;
+
+		// Scout should have more PreToolUse entries than builder
+		expect(scoutPreToolUse.length).toBeGreaterThan(builderPreToolUse.length);
+	});
+
+	test("scout and reviewer have identical guard structures", async () => {
+		const scoutPath = join(tempDir, "scout-wt");
+		const reviewerPath = join(tempDir, "reviewer-wt");
+
+		await deployHooks(scoutPath, "scout-1", "scout");
+		await deployHooks(reviewerPath, "reviewer-1", "reviewer");
+
+		const scoutContent = await Bun.file(join(scoutPath, ".claude", "settings.local.json")).text();
+		const reviewerContent = await Bun.file(
+			join(reviewerPath, ".claude", "settings.local.json"),
+		).text();
+
+		const scoutPreToolUse = JSON.parse(scoutContent).hooks.PreToolUse;
+		const reviewerPreToolUse = JSON.parse(reviewerContent).hooks.PreToolUse;
+
+		// Same number of guards
+		expect(scoutPreToolUse.length).toBe(reviewerPreToolUse.length);
+
+		// Same matchers (just different agent names in commands)
+		const scoutMatchers = scoutPreToolUse.map((h: { matcher: string }) => h.matcher);
+		const reviewerMatchers = reviewerPreToolUse.map((h: { matcher: string }) => h.matcher);
+		expect(scoutMatchers).toEqual(reviewerMatchers);
+	});
+
+	test("lead has same guard structure as scout/reviewer", async () => {
+		const leadPath = join(tempDir, "lead-wt");
+		const scoutPath = join(tempDir, "scout-wt");
+
+		await deployHooks(leadPath, "lead-1", "lead");
+		await deployHooks(scoutPath, "scout-1", "scout");
+
+		const leadContent = await Bun.file(join(leadPath, ".claude", "settings.local.json")).text();
+		const scoutContent = await Bun.file(join(scoutPath, ".claude", "settings.local.json")).text();
+
+		const leadPreToolUse = JSON.parse(leadContent).hooks.PreToolUse;
+		const scoutPreToolUse = JSON.parse(scoutContent).hooks.PreToolUse;
+
+		// Same number of guards
+		expect(leadPreToolUse.length).toBe(scoutPreToolUse.length);
+
+		// Same matchers
+		const leadMatchers = leadPreToolUse.map((h: { matcher: string }) => h.matcher);
+		const scoutMatchers = scoutPreToolUse.map((h: { matcher: string }) => h.matcher);
+		expect(leadMatchers).toEqual(scoutMatchers);
+	});
+
+	test("builder and merger have identical guard structures", async () => {
+		const builderPath = join(tempDir, "builder-wt");
+		const mergerPath = join(tempDir, "merger-wt");
+
+		await deployHooks(builderPath, "builder-1", "builder");
+		await deployHooks(mergerPath, "merger-1", "merger");
+
+		const builderContent = await Bun.file(
+			join(builderPath, ".claude", "settings.local.json"),
+		).text();
+		const mergerContent = await Bun.file(join(mergerPath, ".claude", "settings.local.json")).text();
+
+		const builderPreToolUse = JSON.parse(builderContent).hooks.PreToolUse;
+		const mergerPreToolUse = JSON.parse(mergerContent).hooks.PreToolUse;
+
+		// Same number of guards
+		expect(builderPreToolUse.length).toBe(mergerPreToolUse.length);
+
+		// Same matchers
+		const builderMatchers = builderPreToolUse.map((h: { matcher: string }) => h.matcher);
+		const mergerMatchers = mergerPreToolUse.map((h: { matcher: string }) => h.matcher);
+		expect(builderMatchers).toEqual(mergerMatchers);
+	});
+
+	test("all deployed configs produce valid JSON", async () => {
+		const capabilities = ["scout", "reviewer", "lead", "builder", "merger"];
+
+		for (const cap of capabilities) {
+			const wt = join(tempDir, `${cap}-wt`);
+			await deployHooks(wt, `${cap}-agent`, cap);
+
+			const content = await Bun.file(join(wt, ".claude", "settings.local.json")).text();
+			expect(() => JSON.parse(content)).not.toThrow();
 		}
 	});
 });

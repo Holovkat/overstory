@@ -490,8 +490,21 @@ describe("createMailStore", () => {
 			).toThrow();
 		});
 
-		test("accepts all valid type values", () => {
-			const types: MailMessage["type"][] = ["status", "question", "result", "error"];
+		test("accepts all valid type values including protocol types", () => {
+			const types: MailMessage["type"][] = [
+				"status",
+				"question",
+				"result",
+				"error",
+				"worker_done",
+				"merge_ready",
+				"merged",
+				"merge_failed",
+				"escalation",
+				"health_check",
+				"dispatch",
+				"assign",
+			];
 			for (const type of types) {
 				const msg = store.insert({
 					id: "",
@@ -524,7 +537,7 @@ describe("createMailStore", () => {
 			}
 		});
 
-		test("migrates existing table without CHECK constraints", () => {
+		test("migrates existing table to add payload column and protocol types", () => {
 			// Create a second store to verify migration works on an existing DB
 			// The beforeEach already created the DB with constraints,
 			// so this tests that reopening is safe
@@ -556,6 +569,90 @@ describe("createMailStore", () => {
 			).toThrow();
 
 			store2.close();
+		});
+	});
+
+	describe("payload column", () => {
+		test("stores null payload by default when not provided", () => {
+			const msg = store.insert({
+				id: "msg-no-payload",
+				from: "agent-a",
+				to: "orchestrator",
+				subject: "test",
+				body: "body",
+				type: "status",
+				priority: "normal",
+				threadId: null,
+			});
+
+			const fetched = store.getById(msg.id);
+			expect(fetched?.payload).toBeNull();
+		});
+
+		test("stores JSON payload string", () => {
+			const payload = JSON.stringify({
+				beadId: "beads-abc",
+				branch: "agent/builder-1",
+				exitCode: 0,
+				filesModified: ["src/foo.ts"],
+			});
+			const msg = store.insert({
+				id: "msg-with-payload",
+				from: "builder-1",
+				to: "lead-1",
+				subject: "Task complete",
+				body: "Implementation finished",
+				type: "worker_done",
+				priority: "normal",
+				threadId: null,
+				payload,
+			});
+
+			const fetched = store.getById(msg.id);
+			expect(fetched?.payload).toBe(payload);
+			expect(fetched?.type).toBe("worker_done");
+		});
+
+		test("returns payload in getUnread results", () => {
+			const payload = JSON.stringify({ severity: "critical", beadId: null, context: "OOM" });
+			store.insert({
+				id: "msg-escalation",
+				from: "builder-1",
+				to: "orchestrator",
+				subject: "Escalation",
+				body: "Out of memory",
+				type: "escalation",
+				priority: "urgent",
+				threadId: null,
+				payload,
+			});
+
+			const unread = store.getUnread("orchestrator");
+			expect(unread).toHaveLength(1);
+			expect(unread[0]?.payload).toBe(payload);
+		});
+
+		test("returns payload in getAll results", () => {
+			const payload = JSON.stringify({
+				branch: "agent/b1",
+				beadId: "beads-xyz",
+				tier: "clean-merge",
+			});
+			store.insert({
+				id: "msg-merged",
+				from: "merger-1",
+				to: "lead-1",
+				subject: "Merged",
+				body: "Branch merged",
+				type: "merged",
+				priority: "normal",
+				threadId: null,
+				payload,
+			});
+
+			const all = store.getAll();
+			expect(all).toHaveLength(1);
+			expect(all[0]?.payload).toBe(payload);
 		});
 	});
 });
