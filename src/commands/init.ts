@@ -218,6 +218,14 @@ function buildAgentManifest(): AgentManifest {
 			canSpawn: false,
 			constraints: [],
 		},
+		coordinator: {
+			file: "coordinator.md",
+			model: "opus",
+			tools: ["Read", "Glob", "Grep", "Bash"],
+			capabilities: ["coordinate", "dispatch", "escalate"],
+			canSpawn: true,
+			constraints: ["read-only", "no-worktree"],
+		},
 	};
 
 	// Build capability index: map each capability to agent names that declare it

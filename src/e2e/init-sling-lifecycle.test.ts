@@ -19,7 +19,14 @@ import type { OverlayConfig } from "../types.ts";
  * Suppresses stdout because initCommand prints status lines.
  */
 
-const EXPECTED_AGENT_DEFS = ["builder.md", "lead.md", "merger.md", "reviewer.md", "scout.md"];
+const EXPECTED_AGENT_DEFS = [
+	"builder.md",
+	"coordinator.md",
+	"lead.md",
+	"merger.md",
+	"reviewer.md",
+	"scout.md",
+];
 
 describe("E2E: init→sling lifecycle on external project", () => {
 	let tempDir: string;
@@ -100,7 +107,7 @@ describe("E2E: init→sling lifecycle on external project", () => {
 		expect(config.project.name).toBeTruthy();
 	});
 
-	test("manifest loads successfully with all 5 agents", async () => {
+	test("manifest loads successfully with all 6 agents", async () => {
 		await initCommand([]);
 
 		const manifestPath = join(tempDir, ".overstory", "agent-manifest.json");
@@ -109,9 +116,9 @@ describe("E2E: init→sling lifecycle on external project", () => {
 
 		const manifest = await loader.load();
 
-		// All 5 agents present
+		// All 6 agents present
 		const agentNames = Object.keys(manifest.agents).sort();
-		expect(agentNames).toEqual(["builder", "lead", "merger", "reviewer", "scout"]);
+		expect(agentNames).toEqual(["builder", "coordinator", "lead", "merger", "reviewer", "scout"]);
 
 		// Each agent has a valid file reference
 		for (const [_name, def] of Object.entries(manifest.agents)) {

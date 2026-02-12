@@ -6,6 +6,7 @@
  * Usage: overstory <command> [args...]
  */
 
+import { coordinatorCommand } from "./commands/coordinator.ts";
 import { groupCommand } from "./commands/group.ts";
 import { initCommand } from "./commands/init.ts";
 import { logCommand } from "./commands/log.ts";
@@ -31,6 +32,7 @@ Commands:
   sling <task-id>         Spawn a worker agent
   prime                   Load context for orchestrator/agent
   status                  Show all active agents and project state
+  coordinator <sub>       Persistent coordinator agent (start/stop/status)
   mail <sub>              Mail system (send/check/list/read/reply)
   merge                   Merge agent branches into canonical
   nudge <agent> [msg]     Send a text nudge to an agent
@@ -51,6 +53,7 @@ const COMMANDS = [
 	"sling",
 	"prime",
 	"status",
+	"coordinator",
 	"mail",
 	"merge",
 	"nudge",
@@ -121,6 +124,9 @@ async function main(): Promise<void> {
 			break;
 		case "status":
 			await statusCommand(commandArgs);
+			break;
+		case "coordinator":
+			await coordinatorCommand(commandArgs);
 			break;
 		case "mail":
 			await mailCommand(commandArgs);

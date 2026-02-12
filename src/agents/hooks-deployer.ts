@@ -7,7 +7,7 @@ import { AgentError } from "../errors.ts";
  * Includes read-only roles (scout, reviewer) and coordination roles (lead).
  * Only "builder" and "merger" are allowed to modify files.
  */
-const NON_IMPLEMENTATION_CAPABILITIES = new Set(["scout", "reviewer", "lead"]);
+const NON_IMPLEMENTATION_CAPABILITIES = new Set(["scout", "reviewer", "lead", "coordinator"]);
 
 /** Tools that non-implementation agents must not use. */
 const WRITE_TOOLS = ["Write", "Edit", "NotebookEdit"];

@@ -11,7 +11,14 @@ import { initCommand } from "./init.ts";
  * process.cwd() is saved/restored because initCommand uses it to find the project root.
  */
 
-const AGENT_DEF_FILES = ["scout.md", "builder.md", "reviewer.md", "lead.md", "merger.md"];
+const AGENT_DEF_FILES = [
+	"scout.md",
+	"builder.md",
+	"reviewer.md",
+	"lead.md",
+	"merger.md",
+	"coordinator.md",
+];
 
 /** Resolve the source agents directory (same logic as init.ts). */
 const SOURCE_AGENTS_DIR = join(import.meta.dir, "..", "..", "agents");
@@ -37,7 +44,7 @@ describe("initCommand: agent-defs deployment", () => {
 		await cleanupTempDir(tempDir);
 	});
 
-	test("creates .overstory/agent-defs/ with all 5 agent definition files", async () => {
+	test("creates .overstory/agent-defs/ with all 6 agent definition files", async () => {
 		await initCommand([]);
 
 		const agentDefsDir = join(tempDir, ".overstory", "agent-defs");
