@@ -389,7 +389,18 @@ export async function isSessionAlive(name: string): Promise<boolean> {
  * @throws AgentError if the session does not exist or send fails
  */
 export async function sendKeys(name: string, keys: string): Promise<void> {
-	const { exitCode, stderr } = await runCommand(["tmux", "send-keys", "-t", name, keys, "Enter"]);
+	// Flatten newlines to spaces — multiline text via tmux send-keys causes
+	// Claude Code's TUI to receive embedded Enter keystrokes which prevent
+	// the final "Enter" from triggering message submission (overstory-y2ob).
+	const flatKeys = keys.replace(/\n/g, " ");
+	const { exitCode, stderr } = await runCommand([
+		"tmux",
+		"send-keys",
+		"-t",
+		name,
+		flatKeys,
+		"Enter",
+	]);
 
 	if (exitCode !== 0) {
 		throw new AgentError(`Failed to send keys to tmux session "${name}": ${stderr.trim()}`, {

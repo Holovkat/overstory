@@ -160,7 +160,7 @@ describe("generateOverlay", () => {
 
 		expect(output).toContain("Quality Gates");
 		expect(output).toContain("bun test");
-		expect(output).toContain("biome check");
+		expect(output).toContain("bun run lint");
 		expect(output).toContain("Commit");
 	});
 
@@ -170,7 +170,7 @@ describe("generateOverlay", () => {
 
 		expect(output).toContain("Quality Gates");
 		expect(output).toContain("bun test");
-		expect(output).toContain("biome check");
+		expect(output).toContain("bun run lint");
 	});
 
 	test("merger capability includes full quality gates section", async () => {
@@ -190,7 +190,7 @@ describe("generateOverlay", () => {
 		expect(output).toContain("Do NOT commit");
 		expect(output).not.toContain("Quality Gates");
 		expect(output).not.toContain("bun test");
-		expect(output).not.toContain("biome check");
+		expect(output).not.toContain("bun run lint");
 	});
 
 	test("reviewer capability gets read-only completion section instead of quality gates", async () => {
@@ -202,7 +202,7 @@ describe("generateOverlay", () => {
 		expect(output).toContain("Do NOT commit");
 		expect(output).not.toContain("Quality Gates");
 		expect(output).not.toContain("bun test");
-		expect(output).not.toContain("biome check");
+		expect(output).not.toContain("bun run lint");
 	});
 
 	test("scout completion section includes bd close and mail send", async () => {

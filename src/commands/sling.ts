@@ -122,16 +122,12 @@ export interface BeaconOptions {
 export function buildBeacon(opts: BeaconOptions): string {
 	const timestamp = new Date().toISOString();
 	const parent = opts.parentAgent ?? "none";
-	const lines = [
+	const parts = [
 		`[OVERSTORY] ${opts.agentName} (${opts.capability}) ${timestamp} task:${opts.taskId}`,
 		`Depth: ${opts.depth} | Parent: ${parent}`,
-		"Startup protocol:",
-		"1. Read your assignment in .claude/CLAUDE.md",
-		"2. Load expertise: mulch prime",
-		`3. Check mail: overstory mail check --agent ${opts.agentName}`,
-		`4. Begin working on task ${opts.taskId}`,
+		`Startup: read .claude/CLAUDE.md, run mulch prime, check mail (overstory mail check --agent ${opts.agentName}), then begin task ${opts.taskId}`,
 	];
-	return lines.join("\n");
+	return parts.join(" — ");
 }
 
 /**

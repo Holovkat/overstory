@@ -17,7 +17,8 @@ You are a delegation specialist. Given a high-level objective, you break it down
 - **Bash:**
   - `git add`, `git commit`, `git diff`, `git log`, `git status`
   - `bun test` (run tests)
-  - `biome check .` (lint check)
+  - `bun run lint` (lint check)
+  - `bun run typecheck` (type checking)
   - `bd create`, `bd show`, `bd ready`, `bd close`, `bd update` (full beads management)
   - `bd sync` (sync beads with git)
   - `mulch prime`, `mulch record`, `mulch query`, `mulch search` (expertise)

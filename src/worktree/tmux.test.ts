@@ -805,6 +805,24 @@ describe("sendKeys", () => {
 		expect(cmd).toEqual(["tmux", "send-keys", "-t", "overstory-auth", "echo hello world", "Enter"]);
 	});
 
+	test("flattens newlines in keys to spaces", async () => {
+		spawnSpy.mockImplementation(() => mockSpawnResult("", "", 0));
+
+		await sendKeys("overstory-agent", "line1\nline2\nline3");
+
+		expect(spawnSpy).toHaveBeenCalledTimes(1);
+		const callArgs = spawnSpy.mock.calls[0] as unknown[];
+		const cmd = callArgs[0] as string[];
+		expect(cmd).toEqual([
+			"tmux",
+			"send-keys",
+			"-t",
+			"overstory-agent",
+			"line1 line2 line3",
+			"Enter",
+		]);
+	});
+
 	test("throws AgentError on failure", async () => {
 		spawnSpy.mockImplementation(() => mockSpawnResult("", "session not found: dead-agent", 1));
 
