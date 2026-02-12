@@ -60,20 +60,34 @@ function formatDuration(ms: number): string {
 	return `${hours}h ${remainMin}m`;
 }
 
-interface StatusData {
+export interface VerboseAgentDetail {
+	worktreePath: string;
+	logsDir: string;
+	lastMailSent: string | null;
+	lastMailReceived: string | null;
+	capability: string;
+}
+
+export interface StatusData {
 	agents: AgentSession[];
 	worktrees: Array<{ path: string; branch: string; head: string }>;
 	tmuxSessions: Array<{ name: string; pid: number }>;
 	unreadMailCount: number;
 	mergeQueueCount: number;
 	recentMetricsCount: number;
+	verboseDetails?: Record<string, VerboseAgentDetail>;
 }
 
 /**
  * Gather all status data.
  * @param agentName - Which agent's perspective for unread mail count (default "orchestrator")
+ * @param verbose - When true, collect extra per-agent detail (worktree path, logs dir, last mail)
  */
-async function gatherStatus(root: string, agentName = "orchestrator"): Promise<StatusData> {
+async function gatherStatus(
+	root: string,
+	agentName = "orchestrator",
+	verbose = false,
+): Promise<StatusData> {
 	const sessions = await loadSessions(root);
 
 	const worktrees = await listWorktrees(root);
@@ -113,14 +127,14 @@ async function gatherStatus(root: string, agentName = "orchestrator"): Promise<S
 	}
 
 	let unreadMailCount = 0;
+	let mailStore: ReturnType<typeof createMailStore> | null = null;
 	try {
 		const mailDbPath = join(root, ".overstory", "mail.db");
 		const mailFile = Bun.file(mailDbPath);
 		if (await mailFile.exists()) {
-			const store = createMailStore(mailDbPath);
-			const unread = store.getAll({ to: agentName, unread: true });
+			mailStore = createMailStore(mailDbPath);
+			const unread = mailStore.getAll({ to: agentName, unread: true });
 			unreadMailCount = unread.length;
-			store.close();
 		}
 	} catch {
 		// mail db might not exist
@@ -152,6 +166,43 @@ async function gatherStatus(root: string, agentName = "orchestrator"): Promise<S
 		// metrics db might not exist
 	}
 
+	let verboseDetails: Record<string, VerboseAgentDetail> | undefined;
+	if (verbose && sessions.length > 0) {
+		verboseDetails = {};
+		for (const session of sessions) {
+			const logsDir = join(root, ".overstory", "logs", session.agentName);
+
+			let lastMailSent: string | null = null;
+			let lastMailReceived: string | null = null;
+			if (mailStore) {
+				try {
+					const sent = mailStore.getAll({ from: session.agentName });
+					if (sent.length > 0 && sent[0]) {
+						lastMailSent = sent[0].createdAt;
+					}
+					const received = mailStore.getAll({ to: session.agentName });
+					if (received.length > 0 && received[0]) {
+						lastMailReceived = received[0].createdAt;
+					}
+				} catch {
+					// Best effort
+				}
+			}
+
+			verboseDetails[session.agentName] = {
+				worktreePath: session.worktreePath,
+				logsDir,
+				lastMailSent,
+				lastMailReceived,
+				capability: session.capability,
+			};
+		}
+	}
+
+	if (mailStore) {
+		mailStore.close();
+	}
+
 	return {
 		agents: sessions,
 		worktrees,
@@ -159,13 +210,14 @@ async function gatherStatus(root: string, agentName = "orchestrator"): Promise<S
 		unreadMailCount,
 		mergeQueueCount,
 		recentMetricsCount,
+		verboseDetails,
 	};
 }
 
 /**
  * Print status in human-readable format.
  */
-function printStatus(data: StatusData): void {
+export function printStatus(data: StatusData): void {
 	const now = Date.now();
 	const w = process.stdout.write.bind(process.stdout);
 
@@ -182,6 +234,14 @@ function printStatus(data: StatusData): void {
 			const aliveMarker = tmuxAlive ? "●" : "○";
 			w(`   ${aliveMarker} ${agent.agentName} [${agent.capability}] `);
 			w(`${agent.state} | ${agent.beadId} | ${duration}\n`);
+
+			const detail = data.verboseDetails?.[agent.agentName];
+			if (detail) {
+				w(`     Worktree: ${detail.worktreePath}\n`);
+				w(`     Logs:     ${detail.logsDir}\n`);
+				w(`     Mail sent: ${detail.lastMailSent ?? "none"}`);
+				w(` | received: ${detail.lastMailReceived ?? "none"}\n`);
+			}
 		}
 	} else {
 		w("   No active agents\n");
@@ -214,11 +274,12 @@ function printStatus(data: StatusData): void {
  */
 const STATUS_HELP = `overstory status — Show all active agents and project state
 
-Usage: overstory status [--json] [--watch] [--interval <ms>] [--agent <name>]
+Usage: overstory status [--json] [--watch] [--verbose] [--interval <ms>] [--agent <name>]
 
 Options:
   --json             Output as JSON
   --watch            Live updating mode (polling)
+  --verbose          Show extra detail per agent (worktree, logs, mail timestamps)
   --interval <ms>    Poll interval in milliseconds (default: 3000)
   --agent <name>     Show unread mail for this agent (default: orchestrator)
   --help, -h         Show this help`;
@@ -231,6 +292,7 @@ export async function statusCommand(args: string[]): Promise<void> {
 
 	const json = hasFlag(args, "--json");
 	const watch = hasFlag(args, "--watch");
+	const verbose = hasFlag(args, "--verbose");
 	const intervalStr = getFlag(args, "--interval");
 	const interval = intervalStr ? Number.parseInt(intervalStr, 10) : 3000;
 
@@ -252,7 +314,7 @@ export async function statusCommand(args: string[]): Promise<void> {
 		while (true) {
 			// Clear screen
 			process.stdout.write("\x1b[2J\x1b[H");
-			const data = await gatherStatus(root, agentName);
+			const data = await gatherStatus(root, agentName, verbose);
 			if (json) {
 				process.stdout.write(`${JSON.stringify(data, null, "\t")}\n`);
 			} else {
@@ -261,7 +323,7 @@ export async function statusCommand(args: string[]): Promise<void> {
 			await Bun.sleep(interval);
 		}
 	} else {
-		const data = await gatherStatus(root, agentName);
+		const data = await gatherStatus(root, agentName, verbose);
 		if (json) {
 			process.stdout.write(`${JSON.stringify(data, null, "\t")}\n`);
 		} else {
