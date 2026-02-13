@@ -23,17 +23,19 @@ Coordinator (persistent orchestrator at project root)
 | **Reviewer** | Validation and code review | Read-only |
 | **Lead** | Team coordination, can spawn sub-workers | Read-write |
 | **Merger** | Branch merge specialist | Read-write |
+| **Monitor** | Tier 2 continuous fleet patrol — ongoing health monitoring | Read-only |
 
 ### Key Architecture
 
-- **Agent Definitions**: Two-layer system — base `.md` files define the HOW (workflow), per-task overlays define the WHAT (task scope)
+- **Agent Definitions**: Two-layer system — base `.md` files define the HOW (workflow), per-task overlays define the WHAT (task scope). Base definition content is injected into spawned agent overlays automatically.
 - **Messaging**: Custom SQLite mail system with typed protocol — 8 message types (`worker_done`, `merge_ready`, `dispatch`, `escalation`, etc.) for structured agent coordination
 - **Worktrees**: Each agent gets an isolated git worktree — no file conflicts between agents
 - **Merge**: FIFO merge queue with 4-tier conflict resolution
-- **Watchdog**: ZFC-principled health monitoring — tmux liveness as primary signal, pid check as secondary, with descendant tree walking for process cleanup
+- **Watchdog**: Tiered health monitoring — Tier 0 mechanical daemon (tmux/pid liveness), Tier 1 AI-assisted failure triage, Tier 2 monitor agent for continuous fleet patrol
 - **Tool Enforcement**: PreToolUse hooks mechanically block file modifications for non-implementation agents and dangerous git operations for all agents
 - **Task Groups**: Batch coordination with auto-close when all member issues complete
 - **Session Lifecycle**: Checkpoint save/restore for compaction survivability, handoff orchestration for crash recovery
+- **Token Instrumentation**: Session metrics extracted from Claude Code transcript JSONL files
 
 ## Requirements
 
@@ -63,6 +65,9 @@ bun link
 cd your-project
 overstory init
 
+# Install hooks into .claude/settings.local.json
+overstory hooks install
+
 # Start a coordinator (persistent orchestrator)
 overstory coordinator start
 
@@ -71,6 +76,9 @@ overstory sling <task-id> --capability builder --name my-builder
 
 # Check agent status
 overstory status
+
+# Live dashboard for monitoring the fleet
+overstory dashboard
 
 # Nudge a stalled agent
 overstory nudge <agent-name>
@@ -90,9 +98,14 @@ overstory coordinator start             Start persistent coordinator agent
 overstory coordinator stop              Stop coordinator
 overstory coordinator status            Show coordinator state
 
+overstory supervisor start              Start per-project supervisor agent
+  --attach / --no-attach                 TTY-aware tmux attach (default: auto)
+overstory supervisor stop               Stop supervisor
+overstory supervisor status             Show supervisor state
+
 overstory sling <task-id>              Spawn a worker agent
   --capability <type>                    builder | scout | reviewer | lead | merger
-                                         | coordinator | supervisor
+                                         | coordinator | supervisor | monitor
   --name <name>                          Unique agent name
   --spec <path>                          Path to task spec file
   --files <f1,f2,...>                    Exclusive file scope
@@ -106,8 +119,15 @@ overstory prime                         Load context for orchestrator/agent
 
 overstory status                        Show all active agents, worktrees, beads state
   --json                                 JSON output
-  --watch                                Live updating
   --verbose                              Show detailed agent info
+
+overstory dashboard                     Live TUI dashboard for agent monitoring
+  --interval <ms>                        Refresh interval (default: 2000)
+
+overstory hooks install                 Install orchestrator hooks to .claude/settings.local.json
+  --force                                Overwrite existing hooks
+overstory hooks uninstall               Remove orchestrator hooks
+overstory hooks status                  Check if hooks are installed
 
 overstory mail send                     Send a message
   --to <agent>  --subject <text>  --body <text>
@@ -143,8 +163,12 @@ overstory worktree clean                Remove completed worktrees
   --completed                            Only finished agents
   --all                                  Force remove all
 
+overstory monitor start                 Start Tier 2 monitor agent
+overstory monitor stop                  Stop monitor agent
+overstory monitor status                Show monitor state
+
 overstory log <event>                   Log a hook event
-overstory watch                         Start watchdog daemon
+overstory watch                         Start watchdog daemon (Tier 0)
   --interval <ms>                        Health check interval
   --background                           Run as background process
 overstory metrics                       Show session metrics
@@ -158,13 +182,13 @@ overstory metrics                       Show session metrics
 - **Dependencies**: Zero runtime dependencies — only Bun built-in APIs
 - **Database**: SQLite via `bun:sqlite` (WAL mode for concurrent access)
 - **Linting**: Biome (formatter + linter)
-- **Testing**: `bun test` (515 tests, colocated with source files)
+- **Testing**: `bun test` (912 tests across 44 files, colocated with source)
 - **External CLIs**: `bd` (beads), `mulch`, `git`, `tmux` — invoked as subprocesses
 
 ## Development
 
 ```bash
-# Run tests (515 tests across 24 files)
+# Run tests (912 tests across 44 files)
 bun test
 
 # Run a single test
@@ -204,29 +228,41 @@ overstory/
     types.ts                      Shared types and interfaces
     config.ts                     Config loader + validation
     errors.ts                     Custom error types
-    commands/                     One file per CLI subcommand
+    commands/                     One file per CLI subcommand (17 commands)
       coordinator.ts              Persistent orchestrator lifecycle
       supervisor.ts               Team lead management
+      dashboard.ts                Live TUI dashboard (ANSI, zero deps)
+      hooks.ts                    Orchestrator hooks management
       sling.ts                    Agent spawning
       group.ts                    Task group batch tracking
       nudge.ts                    Agent nudging
       mail.ts                     Inter-agent messaging
-      ...
+      monitor.ts                  Tier 2 monitor management
+      merge.ts                    Branch merging
+      status.ts                   Fleet status overview
+      prime.ts                    Context priming
+      init.ts                     Project initialization
+      worktree.ts                 Worktree management
+      watch.ts                    Watchdog daemon
+      log.ts                      Hook event logging
+      metrics.ts                  Session metrics
     agents/                       Agent lifecycle management
+      manifest.ts                 Agent registry (load + query)
+      overlay.ts                  Dynamic CLAUDE.md overlay generator
+      identity.ts                 Persistent agent identity (CVs)
       checkpoint.ts               Session checkpoint save/restore
       lifecycle.ts                Handoff orchestration
       hooks-deployer.ts           Deploy hooks + tool enforcement
-      ...
     worktree/                     Git worktree + tmux management
     mail/                         SQLite mail system (typed protocol)
-    merge/                        Conflict resolution
-    watchdog/                     ZFC-principled health monitoring
-    logging/                      Multi-format logger
-    metrics/                      SQLite metrics storage
-    beads/                        bd CLI wrapper
+    merge/                        FIFO queue + conflict resolution
+    watchdog/                     Tiered health monitoring (daemon, triage, health)
+    logging/                      Multi-format logger + sanitizer + reporter
+    metrics/                      SQLite metrics + transcript parsing
+    beads/                        bd CLI wrapper + molecules
     mulch/                        mulch CLI wrapper
     e2e/                          End-to-end lifecycle tests
-  agents/                         Base agent definitions (.md)
+  agents/                         Base agent definitions (.md, 8 roles)
   templates/                      Templates for overlays and hooks
 ```
 
