@@ -123,7 +123,7 @@ function horizontalLine(width: number, left: string, _middle: string, right: str
 interface DashboardData {
 	status: StatusData;
 	recentMail: MailMessage[];
-	mergeQueue: Array<{ branch: string; agent: string; status: string }>;
+	mergeQueue: Array<{ branchName: string; agentName: string; status: string }>;
 	metrics: {
 		totalSessions: number;
 		avgDuration: number;
@@ -152,15 +152,15 @@ async function loadDashboardData(root: string): Promise<DashboardData> {
 	}
 
 	// Load merge queue
-	let mergeQueue: Array<{ branch: string; agent: string; status: string }> = [];
+	let mergeQueue: Array<{ branchName: string; agentName: string; status: string }> = [];
 	try {
 		const queuePath = join(root, ".overstory", "merge-queue.json");
 		const queueFile = Bun.file(queuePath);
 		if (await queueFile.exists()) {
 			const text = await queueFile.text();
 			const entries = JSON.parse(text) as Array<{
-				branch: string;
-				agent: string;
+				branchName: string;
+				agentName: string;
 				status: string;
 			}>;
 			mergeQueue = entries;
@@ -459,8 +459,8 @@ function renderMergeQueuePanel(
 
 		const statusColor = getMergeStatusColor(entry.status);
 		const status = pad(entry.status, 10);
-		const agent = truncate(entry.agent, 15);
-		const branch = truncate(entry.branch, panelWidth - 30);
+		const agent = truncate(entry.agentName, 15);
+		const branch = truncate(entry.branchName, panelWidth - 30);
 
 		const line = `${BOX.vertical} ${statusColor}${status}${ANSI.reset} ${agent} ${branch}`;
 		const padding = " ".repeat(
