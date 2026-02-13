@@ -83,7 +83,7 @@ export interface StatusData {
  * @param agentName - Which agent's perspective for unread mail count (default "orchestrator")
  * @param verbose - When true, collect extra per-agent detail (worktree path, logs dir, last mail)
  */
-async function gatherStatus(
+export async function gatherStatus(
 	root: string,
 	agentName = "orchestrator",
 	verbose = false,

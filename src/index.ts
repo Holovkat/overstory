@@ -7,6 +7,7 @@
  */
 
 import { coordinatorCommand } from "./commands/coordinator.ts";
+import { dashboardCommand } from "./commands/dashboard.ts";
 import { groupCommand } from "./commands/group.ts";
 import { initCommand } from "./commands/init.ts";
 import { logCommand } from "./commands/log.ts";
@@ -34,6 +35,7 @@ Commands:
   sling <task-id>         Spawn a worker agent
   prime                   Load context for orchestrator/agent
   status                  Show all active agents and project state
+  dashboard               Live TUI dashboard for agent monitoring
   coordinator <sub>       Persistent coordinator agent (start/stop/status)
   supervisor <sub>        Per-project supervisor agent (start/stop/status)
   mail <sub>              Mail system (send/check/list/read/reply)
@@ -57,6 +59,7 @@ const COMMANDS = [
 	"sling",
 	"prime",
 	"status",
+	"dashboard",
 	"coordinator",
 	"supervisor",
 	"monitor",
@@ -130,6 +133,9 @@ async function main(): Promise<void> {
 			break;
 		case "status":
 			await statusCommand(commandArgs);
+			break;
+		case "dashboard":
+			await dashboardCommand(commandArgs);
 			break;
 		case "coordinator":
 			await coordinatorCommand(commandArgs);
