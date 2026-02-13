@@ -59,6 +59,29 @@ export class AgentError extends OverstoryError {
 }
 
 /**
+ * Raised when hierarchy constraints are violated.
+ * Examples: coordinator spawning a builder directly instead of through a lead.
+ */
+export class HierarchyError extends OverstoryError {
+	readonly agentName: string | null;
+	readonly requestedCapability: string | null;
+
+	constructor(
+		message: string,
+		context?: {
+			agentName?: string;
+			requestedCapability?: string;
+			cause?: Error;
+		},
+	) {
+		super(message, "HIERARCHY_VIOLATION", { cause: context?.cause });
+		this.name = "HierarchyError";
+		this.agentName = context?.agentName ?? null;
+		this.requestedCapability = context?.requestedCapability ?? null;
+	}
+}
+
+/**
  * Raised when git worktree operations fail.
  * Examples: worktree creation, branch conflicts, cleanup failures.
  */

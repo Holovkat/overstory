@@ -22,7 +22,7 @@ import { writeOverlay } from "../agents/overlay.ts";
 import type { BeadIssue } from "../beads/client.ts";
 import { createBeadsClient } from "../beads/client.ts";
 import { loadConfig } from "../config.ts";
-import { AgentError, ValidationError } from "../errors.ts";
+import { AgentError, HierarchyError, ValidationError } from "../errors.ts";
 import type { AgentSession, OverlayConfig } from "../types.ts";
 import { createWorktree } from "../worktree/manager.ts";
 import { createSession, sendKeys } from "../worktree/tmux.ts";
@@ -131,6 +131,40 @@ export function buildBeacon(opts: BeaconOptions): string {
 }
 
 /**
+ * Validate hierarchy constraints: the coordinator (no parent) may only spawn leads.
+ *
+ * When parentAgent is null, the caller is the coordinator or a human.
+ * Only "lead" capability is allowed in that case. All other capabilities
+ * (builder, scout, reviewer, merger) must be spawned by a lead or supervisor
+ * that passes --parent.
+ *
+ * @param parentAgent - The --parent flag value (null = coordinator/human)
+ * @param capability - The requested agent capability
+ * @param name - The agent name (for error context)
+ * @param depth - The requested hierarchy depth
+ * @param forceHierarchy - If true, bypass the check (for debugging)
+ * @throws HierarchyError if the constraint is violated
+ */
+export function validateHierarchy(
+	parentAgent: string | null,
+	capability: string,
+	name: string,
+	_depth: number,
+	forceHierarchy: boolean,
+): void {
+	if (forceHierarchy) {
+		return;
+	}
+
+	if (parentAgent === null && capability !== "lead") {
+		throw new HierarchyError(
+			`Coordinator cannot spawn "${capability}" directly. Only "lead" is allowed without --parent. Use a lead as intermediary, or pass --force-hierarchy to bypass.`,
+			{ agentName: name, requestedCapability: capability },
+		);
+	}
+}
+
+/**
  * Entry point for `overstory sling <task-id> [flags]`.
  *
  * Flags:
@@ -140,6 +174,7 @@ export function buildBeacon(opts: BeaconOptions): string {
  *   --files <f1,f2,...>    Exclusive file scope
  *   --parent <agent-name>  Parent agent (for hierarchy tracking)
  *   --depth <n>            Current hierarchy depth (default 0)
+ *   --force-hierarchy      Bypass hierarchy validation (debugging only)
  */
 const SLING_HELP = `overstory sling — Spawn a worker agent
 
@@ -155,6 +190,7 @@ Options:
   --files <f1,f2,...>        Exclusive file scope (comma-separated)
   --parent <agent-name>      Parent agent for hierarchy tracking
   --depth <n>                Current hierarchy depth (default: 0)
+  --force-hierarchy            Bypass hierarchy validation (debugging only)
   --json                     Output result as JSON
   --help, -h                 Show this help`;
 
@@ -178,6 +214,7 @@ export async function slingCommand(args: string[]): Promise<void> {
 	const parentAgent = getFlag(args, "--parent") ?? null;
 	const depthStr = getFlag(args, "--depth");
 	const depth = depthStr !== undefined ? Number.parseInt(depthStr, 10) : 0;
+	const forceHierarchy = args.includes("--force-hierarchy");
 
 	if (!name || name.trim().length === 0) {
 		throw new ValidationError("--name is required for sling", { field: "name" });
@@ -225,6 +262,9 @@ export async function slingCommand(args: string[]): Promise<void> {
 			{ agentName: name },
 		);
 	}
+
+	// 2b. Validate hierarchy: coordinator (no --parent) can only spawn leads
+	validateHierarchy(parentAgent, capability, name, depth, forceHierarchy);
 
 	// 3. Load manifest and validate capability
 	const manifestLoader = createManifestLoader(

@@ -8,7 +8,7 @@ project:
 agents:
   manifestPath: .overstory/agent-manifest.json
   baseDir: agents
-  maxConcurrent: 5
+  maxConcurrent: 25
   staggerDelayMs: 2000
   maxDepth: 2
 worktrees:

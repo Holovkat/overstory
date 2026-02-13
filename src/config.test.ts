@@ -32,7 +32,7 @@ describe("loadConfig", () => {
 
 		expect(config.project.root).toBe(tempDir);
 		expect(config.project.canonicalBranch).toBe("main");
-		expect(config.agents.maxConcurrent).toBe(5);
+		expect(config.agents.maxConcurrent).toBe(25);
 		expect(config.agents.maxDepth).toBe(2);
 		expect(config.beads.enabled).toBe(true);
 		expect(config.mulch.enabled).toBe(true);
@@ -380,7 +380,7 @@ describe("DEFAULT_CONFIG", () => {
 
 	test("has sensible default values", () => {
 		expect(DEFAULT_CONFIG.project.canonicalBranch).toBe("main");
-		expect(DEFAULT_CONFIG.agents.maxConcurrent).toBe(5);
+		expect(DEFAULT_CONFIG.agents.maxConcurrent).toBe(25);
 		expect(DEFAULT_CONFIG.agents.maxDepth).toBe(2);
 		expect(DEFAULT_CONFIG.agents.staggerDelayMs).toBe(2_000);
 		expect(DEFAULT_CONFIG.watchdog.tier0IntervalMs).toBe(30_000);

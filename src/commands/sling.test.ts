@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { type BeaconOptions, buildBeacon, calculateStaggerDelay } from "./sling.ts";
+import { HierarchyError } from "../errors.ts";
+import {
+	type BeaconOptions,
+	buildBeacon,
+	calculateStaggerDelay,
+	validateHierarchy,
+} from "./sling.ts";
 
 /**
  * Tests for the stagger delay enforcement in the sling command (step 4b).
@@ -147,6 +153,82 @@ describe("calculateStaggerDelay", () => {
 		const delay = calculateStaggerDelay(5_000, sessions, now);
 
 		expect(delay).toBe(0);
+	});
+});
+
+/**
+ * Tests for hierarchy validation in sling.
+ *
+ * validateHierarchy enforces that the coordinator (no --parent flag) can only
+ * spawn lead agents. All other capabilities must be spawned by a lead or
+ * supervisor that passes --parent. This prevents the flat delegation anti-pattern
+ * where the coordinator short-circuits the hierarchy.
+ */
+
+describe("validateHierarchy", () => {
+	test("rejects builder when parentAgent is null", () => {
+		expect(() => validateHierarchy(null, "builder", "test-builder", 0, false)).toThrow(
+			HierarchyError,
+		);
+	});
+
+	test("rejects scout when parentAgent is null", () => {
+		expect(() => validateHierarchy(null, "scout", "test-scout", 0, false)).toThrow(HierarchyError);
+	});
+
+	test("rejects reviewer when parentAgent is null", () => {
+		expect(() => validateHierarchy(null, "reviewer", "test-reviewer", 0, false)).toThrow(
+			HierarchyError,
+		);
+	});
+
+	test("rejects merger when parentAgent is null", () => {
+		expect(() => validateHierarchy(null, "merger", "test-merger", 0, false)).toThrow(
+			HierarchyError,
+		);
+	});
+
+	test("allows lead when parentAgent is null", () => {
+		expect(() => validateHierarchy(null, "lead", "test-lead", 0, false)).not.toThrow();
+	});
+
+	test("allows builder when parentAgent is provided", () => {
+		expect(() =>
+			validateHierarchy("lead-alpha", "builder", "test-builder", 1, false),
+		).not.toThrow();
+	});
+
+	test("allows scout when parentAgent is provided", () => {
+		expect(() => validateHierarchy("lead-alpha", "scout", "test-scout", 1, false)).not.toThrow();
+	});
+
+	test("allows reviewer when parentAgent is provided", () => {
+		expect(() =>
+			validateHierarchy("lead-alpha", "reviewer", "test-reviewer", 1, false),
+		).not.toThrow();
+	});
+
+	test("--force-hierarchy bypasses the check for builder", () => {
+		expect(() => validateHierarchy(null, "builder", "test-builder", 0, true)).not.toThrow();
+	});
+
+	test("--force-hierarchy bypasses the check for scout", () => {
+		expect(() => validateHierarchy(null, "scout", "test-scout", 0, true)).not.toThrow();
+	});
+
+	test("error has correct fields and code", () => {
+		try {
+			validateHierarchy(null, "builder", "my-builder", 0, false);
+			expect.unreachable("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(HierarchyError);
+			const he = err as HierarchyError;
+			expect(he.code).toBe("HIERARCHY_VIOLATION");
+			expect(he.agentName).toBe("my-builder");
+			expect(he.requestedCapability).toBe("builder");
+			expect(he.message).toContain("builder");
+			expect(he.message).toContain("lead");
+		}
 	});
 });
 
