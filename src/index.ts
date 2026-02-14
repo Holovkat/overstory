@@ -19,6 +19,7 @@ import { metricsCommand } from "./commands/metrics.ts";
 import { monitorCommand } from "./commands/monitor.ts";
 import { nudgeCommand } from "./commands/nudge.ts";
 import { primeCommand } from "./commands/prime.ts";
+import { runCommand } from "./commands/run.ts";
 import { slingCommand } from "./commands/sling.ts";
 import { specCommand } from "./commands/spec.ts";
 import { statusCommand } from "./commands/status.ts";
@@ -54,6 +55,7 @@ Commands:
   log <event>             Log a hook event
   watch                   Start watchdog daemon
   trace <target>         Chronological event timeline for agent/bead
+  run [sub]               Manage runs (list/show/complete)
   metrics                 Show session metrics
 
 Options:
@@ -82,6 +84,7 @@ const COMMANDS = [
 	"log",
 	"watch",
 	"trace",
+	"run",
 	"metrics",
 ];
 
@@ -190,6 +193,9 @@ async function main(): Promise<void> {
 			break;
 		case "trace":
 			await traceCommand(commandArgs);
+			break;
+		case "run":
+			await runCommand(commandArgs);
 			break;
 		case "metrics":
 			await metricsCommand(commandArgs);
