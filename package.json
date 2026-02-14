@@ -1,7 +1,28 @@
 {
 	"name": "overstory",
 	"version": "0.2.0",
+	"description": "Multi-agent orchestration for Claude Code — spawn worker agents in git worktrees via tmux, coordinate through SQLite mail, merge with tiered conflict resolution",
+	"author": "Jaymin West",
+	"license": "MIT",
 	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/jayminwest/overstory.git"
+	},
+	"homepage": "https://github.com/jayminwest/overstory",
+	"keywords": [
+		"ai",
+		"agents",
+		"orchestration",
+		"claude-code",
+		"multi-agent",
+		"swarm",
+		"cli",
+		"developer-tools"
+	],
+	"engines": {
+		"bun": ">=1.0"
+	},
 	"bin": {
 		"overstory": "./src/index.ts"
 	},
