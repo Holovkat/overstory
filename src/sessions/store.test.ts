@@ -10,7 +10,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, AgentState, InsertRun, Run, RunStore } from "../types.ts";
-import { type SessionStore, createRunStore, createSessionStore } from "./store.ts";
+import { createRunStore, createSessionStore, type SessionStore } from "./store.ts";
 
 let tempDir: string;
 let dbPath: string;

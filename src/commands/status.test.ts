@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "../types.ts";
-import { type StatusData, type VerboseAgentDetail, printStatus, statusCommand } from "./status.ts";
+import { printStatus, type StatusData, statusCommand, type VerboseAgentDetail } from "./status.ts";
 
 /**
  * Tests for the --verbose flag in overstory status.

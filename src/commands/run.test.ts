@@ -6,12 +6,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, rm, unlink } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRunStore, createSessionStore } from "../sessions/store.ts";
 import type { SessionStore } from "../sessions/store.ts";
+import { createRunStore, createSessionStore } from "../sessions/store.ts";
 import type { AgentSession, InsertRun, RunStore } from "../types.ts";
 
 let tempDir: string;

@@ -12,8 +12,8 @@ import { MailError, ValidationError } from "../errors.ts";
 import { createEventStore } from "../events/store.ts";
 import { createMailClient } from "../mail/client.ts";
 import { createMailStore } from "../mail/store.ts";
-import { MAIL_MESSAGE_TYPES } from "../types.ts";
 import type { MailMessage, MailMessageType } from "../types.ts";
+import { MAIL_MESSAGE_TYPES } from "../types.ts";
 
 /**
  * Protocol message types that require immediate recipient attention.

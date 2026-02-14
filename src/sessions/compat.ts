@@ -12,7 +12,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentSession } from "../types.ts";
-import { type SessionStore, createSessionStore } from "./store.ts";
+import { createSessionStore, type SessionStore } from "./store.ts";
 
 /**
  * Normalize a session object that may have been parsed from JSON

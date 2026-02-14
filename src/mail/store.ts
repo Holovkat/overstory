@@ -8,8 +8,8 @@
 
 import { Database } from "bun:sqlite";
 import { MailError } from "../errors.ts";
-import { MAIL_MESSAGE_TYPES } from "../types.ts";
 import type { MailMessage } from "../types.ts";
+import { MAIL_MESSAGE_TYPES } from "../types.ts";
 
 export interface MailStore {
 	insert(

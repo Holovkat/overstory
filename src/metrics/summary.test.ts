@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir } from "../test-helpers.ts";
 import type { SessionMetrics } from "../types.ts";
-import { type MetricsStore, createMetricsStore } from "./store.ts";
+import { createMetricsStore, type MetricsStore } from "./store.ts";
 import { formatSummary, generateSummary } from "./summary.ts";
 
 let tempDir: string;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MailError } from "../errors.ts";
 import type { MailMessage } from "../types.ts";
-import { type MailStore, createMailStore } from "./store.ts";
+import { createMailStore, type MailStore } from "./store.ts";
 
 describe("createMailStore", () => {
 	let tempDir: string;

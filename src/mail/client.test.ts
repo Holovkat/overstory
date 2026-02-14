@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MailError } from "../errors.ts";
 import type { WorkerDonePayload } from "../types.ts";
-import { type MailClient, createMailClient, parsePayload } from "./client.ts";
-import { type MailStore, createMailStore } from "./store.ts";
+import { createMailClient, type MailClient, parsePayload } from "./client.ts";
+import { createMailStore, type MailStore } from "./store.ts";
 
 describe("createMailClient", () => {
 	let tempDir: string;

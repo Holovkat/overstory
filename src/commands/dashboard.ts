@@ -12,7 +12,7 @@ import { ValidationError } from "../errors.ts";
 import { createMailStore } from "../mail/store.ts";
 import { createMetricsStore } from "../metrics/store.ts";
 import type { MailMessage } from "../types.ts";
-import { type StatusData, gatherStatus } from "./status.ts";
+import { gatherStatus, type StatusData } from "./status.ts";
 
 /**
  * ANSI escape codes for rendering.

@@ -19,8 +19,8 @@ import { openSessionStore } from "../sessions/compat.ts";
 import { cleanupTempDir, createTempGitRepo } from "../test-helpers.ts";
 import type { AgentSession } from "../types.ts";
 import {
-	type CoordinatorDeps,
 	buildCoordinatorBeacon,
+	type CoordinatorDeps,
 	coordinatorCommand,
 	resolveAttach,
 } from "./coordinator.ts";

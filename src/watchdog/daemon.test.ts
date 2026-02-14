@@ -15,8 +15,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, rm } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEventStore } from "../events/store.ts";
@@ -124,7 +123,9 @@ function tmuxWithLiveness(aliveMap: Record<string, boolean>): {
 }
 
 /** Create a fake _triage that always returns the given verdict. */
-function triageAlways(verdict: "retry" | "terminate" | "extend"): (options: {
+function triageAlways(
+	verdict: "retry" | "terminate" | "extend",
+): (options: {
 	agentName: string;
 	root: string;
 	lastActivity: string;
