@@ -133,6 +133,26 @@ describe("deployHooks", () => {
 		expect(parsed.hooks.Stop).toBeArray();
 	});
 
+	test("PostToolUse hook includes debounced mail check entry", async () => {
+		const worktreePath = join(tempDir, "worktree");
+
+		await deployHooks(worktreePath, "mail-check-agent");
+
+		const outputPath = join(worktreePath, ".claude", "settings.local.json");
+		const content = await Bun.file(outputPath).text();
+		const parsed = JSON.parse(content);
+		const postToolUse = parsed.hooks.PostToolUse;
+		// PostToolUse should have 2 entries: logger and mail check
+		expect(postToolUse).toHaveLength(2);
+		// First entry is the logging hook
+		expect(postToolUse[0].hooks[0].command).toContain("overstory log tool-end");
+		// Second entry is the debounced mail check
+		expect(postToolUse[1].hooks[0].command).toContain("overstory mail check --inject");
+		expect(postToolUse[1].hooks[0].command).toContain("mail-check-agent");
+		expect(postToolUse[1].hooks[0].command).toContain("--debounce 30000");
+		expect(postToolUse[1].hooks[0].command).toContain("OVERSTORY_AGENT_NAME");
+	});
+
 	test("output contains PreCompact hook", async () => {
 		const worktreePath = join(tempDir, "worktree");
 

@@ -42,6 +42,15 @@
 						"command": "[ -z \"$OVERSTORY_AGENT_NAME\" ] && exit 0; read -r INPUT; echo \"$INPUT\" | overstory log tool-end --agent {{AGENT_NAME}} --stdin"
 					}
 				]
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "[ -z \"$OVERSTORY_AGENT_NAME\" ] && exit 0; overstory mail check --inject --agent {{AGENT_NAME}} --debounce 30000"
+					}
+				]
 			}
 		],
 		"Stop": [
