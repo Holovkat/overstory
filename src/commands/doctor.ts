@@ -14,9 +14,9 @@ import { checkDependencies } from "../doctor/dependencies.ts";
 import { checkLogs } from "../doctor/logs.ts";
 import { checkMergeQueue } from "../doctor/merge-queue.ts";
 import { checkStructure } from "../doctor/structure.ts";
+import type { DoctorCategory, DoctorCheck, DoctorCheckFn } from "../doctor/types.ts";
 import { checkVersion } from "../doctor/version.ts";
 import { ValidationError } from "../errors.ts";
-import type { DoctorCategory, DoctorCheck, DoctorCheckFn } from "../types.ts";
 
 // ANSI escape codes consistent with src/commands/trace.ts
 const ANSI = {
