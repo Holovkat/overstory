@@ -110,13 +110,43 @@ function parseYaml(text: string): Record<string, unknown> {
 		// Array item: "- value"
 		if (content.startsWith("- ")) {
 			const value = content.slice(2).trim();
-			// Find the key this array belongs to - it's the last key set on the parent
-			// We need to find which key in the parent obj is an array at this indent
+			// Find the key this array belongs to.
+			// First check parent.obj directly (for inline arrays or subsequent items).
 			const lastKey = findLastKey(parent.obj);
 			if (lastKey !== null) {
 				const existing = parent.obj[lastKey];
 				if (Array.isArray(existing)) {
 					existing.push(parseValue(value));
+					continue;
+				}
+			}
+
+			// Multiline array case: `key:\n  - item` pushes an empty {} onto the
+			// stack for the nested object.  The `- ` item's parent is that empty {},
+			// which has no keys.  We need to look one level up in the stack to find
+			// the key whose value is the empty {} and convert it to [].
+			if (stack.length >= 2) {
+				const grandparent = stack[stack.length - 2];
+				if (grandparent) {
+					const gpKey = findLastKey(grandparent.obj);
+					if (gpKey !== null) {
+						const gpVal = grandparent.obj[gpKey];
+						if (
+							gpVal !== null &&
+							gpVal !== undefined &&
+							typeof gpVal === "object" &&
+							!Array.isArray(gpVal) &&
+							Object.keys(gpVal as Record<string, unknown>).length === 0
+						) {
+							// Convert {} to [] and push the first item.
+							const arr: unknown[] = [parseValue(value)];
+							grandparent.obj[gpKey] = arr;
+							// Pop the now-stale nested {} from the stack so subsequent
+							// `- ` items find the grandparent and the array directly.
+							stack.pop();
+							continue;
+						}
+					}
 				}
 			}
 			continue;
