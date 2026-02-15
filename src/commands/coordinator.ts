@@ -242,7 +242,7 @@ async function startCoordinator(args: string[], deps: CoordinatorDeps = {}): Pro
 		// ensures they only activate when OVERSTORY_AGENT_NAME is set (i.e. for
 		// the coordinator's tmux session), so the user's own Claude Code session
 		// at the project root is unaffected.
-		await deployHooks(projectRoot, COORDINATOR_NAME, "coordinator", config.sandbox);
+		await deployHooks(projectRoot, COORDINATOR_NAME, "coordinator");
 
 		// Create coordinator identity if first run
 		const identityBaseDir = join(projectRoot, ".overstory", "agents");

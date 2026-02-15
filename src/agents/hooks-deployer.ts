@@ -486,14 +486,12 @@ export function getCapabilityGuards(capability: string): HookEntry[] {
  * @param worktreePath - Absolute path to the agent's git worktree
  * @param agentName - The unique name of the agent
  * @param capability - Agent capability (builder, scout, reviewer, lead, merger)
- * @param sandboxConfig - Optional sandbox configuration (enabled, allowedDomains, denyReadPaths)
  * @throws {AgentError} If the template is not found or the write fails
  */
 export async function deployHooks(
 	worktreePath: string,
 	agentName: string,
 	capability = "builder",
-	sandboxConfig?: { enabled: boolean; allowedDomains: string[]; denyReadPaths: string[] },
 ): Promise<void> {
 	const templatePath = getTemplatePath();
 	const file = Bun.file(templatePath);
@@ -531,24 +529,6 @@ export async function deployHooks(
 	if (allGuards.length > 0) {
 		const preToolUse = config.hooks.PreToolUse ?? [];
 		config.hooks.PreToolUse = [...allGuards, ...preToolUse];
-	}
-
-	// Merge sandbox settings when enabled
-	if (sandboxConfig?.enabled) {
-		(config as Record<string, unknown>).sandbox = {
-			enabled: true,
-			autoAllowBashIfSandboxed: true,
-			allowUnsandboxedCommands: false,
-			network: {
-				allowedDomains: sandboxConfig.allowedDomains,
-			},
-		};
-		// Map denyReadPaths to Claude Code permissions.deny format
-		if (sandboxConfig.denyReadPaths.length > 0) {
-			(config as Record<string, unknown>).permissions = {
-				deny: sandboxConfig.denyReadPaths.map((p) => `Read(${p}/**)`),
-			};
-		}
 	}
 
 	const finalContent = `${JSON.stringify(config, null, "\t")}\n`;

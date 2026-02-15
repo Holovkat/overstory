@@ -43,11 +43,6 @@ export const DEFAULT_CONFIG: OverstoryConfig = {
 		zombieThresholdMs: 600_000, // 10 minutes
 		nudgeIntervalMs: 60_000, // 1 minute between progressive nudge stages
 	},
-	sandbox: {
-		enabled: true,
-		allowedDomains: ["api.anthropic.com", "github.com"],
-		denyReadPaths: ["~/.ssh", "~/.aws"],
-	},
 	logging: {
 		verbose: false,
 		redactSecrets: true,
@@ -387,22 +382,6 @@ function validateConfig(config: OverstoryConfig): void {
 		throw new ValidationError(`mulch.primeFormat must be one of: ${validFormats.join(", ")}`, {
 			field: "mulch.primeFormat",
 			value: config.mulch.primeFormat,
-		});
-	}
-
-	// sandbox.allowedDomains must be an array
-	if (!Array.isArray(config.sandbox.allowedDomains)) {
-		throw new ValidationError("sandbox.allowedDomains must be an array", {
-			field: "sandbox.allowedDomains",
-			value: config.sandbox.allowedDomains,
-		});
-	}
-
-	// sandbox.denyReadPaths must be an array
-	if (!Array.isArray(config.sandbox.denyReadPaths)) {
-		throw new ValidationError("sandbox.denyReadPaths must be an array", {
-			field: "sandbox.denyReadPaths",
-			value: config.sandbox.denyReadPaths,
 		});
 	}
 }

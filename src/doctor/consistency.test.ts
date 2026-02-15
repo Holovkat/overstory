@@ -105,11 +105,6 @@ describe("checkConsistency", () => {
 				zombieThresholdMs: 300000,
 				nudgeIntervalMs: 30000,
 			},
-			sandbox: {
-				enabled: true,
-				allowedDomains: [],
-				denyReadPaths: [],
-			},
 			logging: {
 				verbose: false,
 				redactSecrets: true,

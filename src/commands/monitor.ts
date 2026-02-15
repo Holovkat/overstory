@@ -102,7 +102,7 @@ async function startMonitor(args: string[]): Promise<void> {
 		// Deploy monitor-specific hooks to the project root's .claude/ directory.
 		// The monitor gets the same structural enforcement as other non-implementation
 		// agents (Write/Edit/NotebookEdit blocked, dangerous bash commands blocked).
-		await deployHooks(projectRoot, MONITOR_NAME, "monitor", config.sandbox);
+		await deployHooks(projectRoot, MONITOR_NAME, "monitor");
 
 		// Create monitor identity if first run
 		const identityBaseDir = join(projectRoot, ".overstory", "agents");

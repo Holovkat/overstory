@@ -165,7 +165,7 @@ async function startSupervisor(args: string[]): Promise<void> {
 		}
 
 		// Deploy supervisor-specific hooks to the project root's .claude/ directory.
-		await deployHooks(projectRoot, flags.name, "supervisor", config.sandbox);
+		await deployHooks(projectRoot, flags.name, "supervisor");
 
 		// Create supervisor identity if first run
 		const identityBaseDir = join(projectRoot, ".overstory", "agents");

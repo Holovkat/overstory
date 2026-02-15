@@ -58,11 +58,6 @@ describe("checkStructure", () => {
 				zombieThresholdMs: 600000,
 				nudgeIntervalMs: 60000,
 			},
-			sandbox: {
-				enabled: true,
-				allowedDomains: [],
-				denyReadPaths: [],
-			},
 			logging: {
 				verbose: false,
 				redactSecrets: true,

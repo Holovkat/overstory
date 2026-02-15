@@ -37,11 +37,6 @@ export interface OverstoryConfig {
 		zombieThresholdMs: number; // When to kill
 		nudgeIntervalMs: number; // Time between progressive nudge stages (default 60_000)
 	};
-	sandbox: {
-		enabled: boolean; // Enable Claude Code Seatbelt sandbox (default true)
-		allowedDomains: string[]; // Network domains agents can access
-		denyReadPaths: string[]; // Paths denied via permissions.deny Read rules
-	};
 	logging: {
 		verbose: boolean;
 		redactSecrets: boolean;

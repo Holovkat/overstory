@@ -396,7 +396,7 @@ export async function slingCommand(args: string[]): Promise<void> {
 		}
 
 		// 9. Deploy hooks config (capability-specific guards)
-		await deployHooks(worktreePath, name, capability, config.sandbox);
+		await deployHooks(worktreePath, name, capability);
 
 		// 10. Claim beads issue
 		if (config.beads.enabled) {

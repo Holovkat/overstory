@@ -183,29 +183,6 @@ watchdog:
 		expect(config.watchdog.tier0IntervalMs).toBe(20000);
 		expect(config.watchdog.tier1Enabled).toBe(true);
 	});
-
-	test("returns sandbox defaults when sandbox section omitted", async () => {
-		const config = await loadConfig(tempDir);
-		expect(config.sandbox.enabled).toBe(true);
-		expect(config.sandbox.allowedDomains).toEqual(["api.anthropic.com", "github.com"]);
-		expect(config.sandbox.denyReadPaths).toEqual(["~/.ssh", "~/.aws"]);
-	});
-
-	test("sandbox can be disabled via config", async () => {
-		await ensureOverstoryDir();
-		await writeConfig("sandbox:\n  enabled: false\n");
-		const config = await loadConfig(tempDir);
-		expect(config.sandbox.enabled).toBe(false);
-	});
-
-	test("parses sandbox allowedDomains and denyReadPaths", async () => {
-		await ensureOverstoryDir();
-		await writeConfig("sandbox:\n  enabled: true\n  allowedDomains: []\n  denyReadPaths: []\n");
-		const config = await loadConfig(tempDir);
-		expect(config.sandbox.enabled).toBe(true);
-		expect(config.sandbox.allowedDomains).toEqual([]);
-		expect(config.sandbox.denyReadPaths).toEqual([]);
-	});
 });
 
 describe("validateConfig", () => {
@@ -398,7 +375,6 @@ describe("DEFAULT_CONFIG", () => {
 		expect(DEFAULT_CONFIG.mulch).toBeDefined();
 		expect(DEFAULT_CONFIG.merge).toBeDefined();
 		expect(DEFAULT_CONFIG.watchdog).toBeDefined();
-		expect(DEFAULT_CONFIG.sandbox).toBeDefined();
 		expect(DEFAULT_CONFIG.logging).toBeDefined();
 	});
 
@@ -410,12 +386,5 @@ describe("DEFAULT_CONFIG", () => {
 		expect(DEFAULT_CONFIG.watchdog.tier0IntervalMs).toBe(30_000);
 		expect(DEFAULT_CONFIG.watchdog.staleThresholdMs).toBe(300_000);
 		expect(DEFAULT_CONFIG.watchdog.zombieThresholdMs).toBe(600_000);
-	});
-
-	test("has sandbox defaults", () => {
-		expect(DEFAULT_CONFIG.sandbox).toBeDefined();
-		expect(DEFAULT_CONFIG.sandbox.enabled).toBe(true);
-		expect(DEFAULT_CONFIG.sandbox.allowedDomains).toEqual(["api.anthropic.com", "github.com"]);
-		expect(DEFAULT_CONFIG.sandbox.denyReadPaths).toEqual(["~/.ssh", "~/.aws"]);
 	});
 });
