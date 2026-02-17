@@ -390,4 +390,81 @@ recentTasks: []
 			}
 		});
 	});
+
+	describe("Gitignore auto-heal", () => {
+		const expectedGitignore = `# Wildcard+whitelist: ignore everything, whitelist tracked files
+# Auto-healed by overstory prime on each session start
+*
+!.gitignore
+!config.yaml
+!agent-manifest.json
+!hooks.json
+!groups.json
+!agent-defs/
+`;
+
+		test("creates .overstory/.gitignore if missing", async () => {
+			// The beforeEach creates .overstory/config.yaml but not .gitignore
+			const gitignorePath = join(tempDir, ".overstory", ".gitignore");
+
+			// Verify it doesn't exist
+			const existsBefore = await Bun.file(gitignorePath).exists();
+			expect(existsBefore).toBe(false);
+
+			// Run primeCommand
+			await primeCommand([]);
+
+			// Verify .gitignore was created with correct content
+			const content = await Bun.file(gitignorePath).text();
+			expect(content).toBe(expectedGitignore);
+		});
+
+		test("overwrites stale .overstory/.gitignore with current template", async () => {
+			// Write an old-style deny-list gitignore
+			const gitignorePath = join(tempDir, ".overstory", ".gitignore");
+			const staleContent = `# Old deny-list format
+worktrees/
+logs/
+mail.db
+sessions.db
+`;
+			await Bun.write(gitignorePath, staleContent);
+
+			// Verify stale content is present
+			const contentBefore = await Bun.file(gitignorePath).text();
+			expect(contentBefore).toBe(staleContent);
+
+			// Run primeCommand
+			await primeCommand([]);
+
+			// Verify .gitignore now has the wildcard+whitelist content
+			const contentAfter = await Bun.file(gitignorePath).text();
+			expect(contentAfter).toBe(expectedGitignore);
+		});
+
+		test("does not overwrite .overstory/.gitignore if already correct", async () => {
+			// Write the correct OVERSTORY_GITIGNORE content
+			const gitignorePath = join(tempDir, ".overstory", ".gitignore");
+			await Bun.write(gitignorePath, expectedGitignore);
+
+			// Get file stat before
+			const statBefore = await Bun.file(gitignorePath).stat();
+			const mtimeBefore = statBefore?.mtime;
+
+			// Wait a tiny bit to ensure mtime would change if file is rewritten
+			await new Promise((resolve) => setTimeout(resolve, 10));
+
+			// Run primeCommand
+			await primeCommand([]);
+
+			// Verify content is still correct
+			const contentAfter = await Bun.file(gitignorePath).text();
+			expect(contentAfter).toBe(expectedGitignore);
+
+			// Verify mtime is unchanged (file was not rewritten)
+			const statAfter = await Bun.file(gitignorePath).stat();
+			const mtimeAfter = statAfter?.mtime;
+			expect(mtimeAfter).toEqual(mtimeBefore);
+		});
+	});
 });

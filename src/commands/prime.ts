@@ -20,6 +20,22 @@ import type { AgentIdentity, AgentManifest, SessionCheckpoint, SessionMetrics } 
 import { getCurrentSessionName } from "../worktree/tmux.ts";
 
 /**
+ * Gitignore content for .overstory/.gitignore.
+ * TODO: Import from init.ts once it's exported (parallel branch change).
+ * Wildcard+whitelist pattern: ignore everything except tracked config files.
+ */
+const OVERSTORY_GITIGNORE = `# Wildcard+whitelist: ignore everything, whitelist tracked files
+# Auto-healed by overstory prime on each session start
+*
+!.gitignore
+!config.yaml
+!agent-manifest.json
+!hooks.json
+!groups.json
+!agent-defs/
+`;
+
+/**
  * Parse CLI flags from the args array.
  *
  * Supports:
@@ -118,6 +134,23 @@ function formatCheckpointRecovery(checkpoint: SessionCheckpoint): string {
 }
 
 /**
+ * Auto-heal .overstory/.gitignore if its content differs from the template.
+ * Ensures existing projects get updated gitignore on session start.
+ */
+async function healGitignore(overstoryDir: string): Promise<void> {
+	const gitignorePath = join(overstoryDir, ".gitignore");
+	try {
+		const current = await Bun.file(gitignorePath).text();
+		if (current === OVERSTORY_GITIGNORE) {
+			return; // Already up to date
+		}
+	} catch {
+		// File does not exist — write it fresh
+	}
+	await Bun.write(gitignorePath, OVERSTORY_GITIGNORE);
+}
+
+/**
  * Prime command entry point.
  *
  * Gathers project state and outputs context to stdout for injection
@@ -145,7 +178,11 @@ export async function primeCommand(args: string[]): Promise<void> {
 	// 1. Load config
 	const config = await loadConfig(process.cwd());
 
-	// 2. Load mulch expertise (optional — skip on failure)
+	// 2. Auto-heal .overstory/.gitignore
+	const overstoryDir = join(config.project.root, ".overstory");
+	await healGitignore(overstoryDir);
+
+	// 3. Load mulch expertise (optional — skip on failure)
 	let expertiseOutput: string | null = null;
 	if (!compact && config.mulch.enabled) {
 		try {
@@ -157,6 +194,7 @@ export async function primeCommand(args: string[]): Promise<void> {
 		}
 	}
 
+	// 4. Output context (orchestrator or agent)
 	if (agentName !== null) {
 		// === Agent priming ===
 		await outputAgentContext(config, agentName, compact, expertiseOutput);
