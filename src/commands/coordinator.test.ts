@@ -16,6 +16,7 @@ import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { AgentError, ValidationError } from "../errors.ts";
 import { openSessionStore } from "../sessions/compat.ts";
+import { createRunStore } from "../sessions/store.ts";
 import { cleanupTempDir, createTempGitRepo } from "../test-helpers.ts";
 import type { AgentSession } from "../types.ts";
 import {
@@ -687,6 +688,119 @@ describe("stopCoordinator", () => {
 		const { deps } = makeDeps();
 
 		await expect(coordinatorCommand(["stop"], deps)).rejects.toThrow(AgentError);
+	});
+});
+
+describe("stopCoordinator run completion", () => {
+	test("coordinator stop auto-completes the active run", async () => {
+		// Create a coordinator session
+		const session = makeCoordinatorSession({ state: "working" });
+		saveSessionsToDb([session]);
+
+		// Create a run in RunStore
+		const dbPath = join(overstoryDir, "sessions.db");
+		const runStore = createRunStore(dbPath);
+		runStore.createRun({
+			id: "run-test-123",
+			startedAt: new Date().toISOString(),
+			coordinatorSessionId: null,
+			status: "active",
+		});
+		runStore.close();
+
+		// Write current-run.txt
+		await Bun.write(join(overstoryDir, "current-run.txt"), "run-test-123");
+
+		// Stop coordinator
+		const { deps } = makeDeps({ "overstory-test-project-coordinator": true });
+		await captureStdout(() => coordinatorCommand(["stop"], deps));
+
+		// Verify run status is "completed"
+		const runStoreCheck = createRunStore(dbPath);
+		const run = runStoreCheck.getRun("run-test-123");
+		runStoreCheck.close();
+		expect(run?.status).toBe("completed");
+
+		// Verify current-run.txt is deleted
+		const currentRunFile = Bun.file(join(overstoryDir, "current-run.txt"));
+		expect(await currentRunFile.exists()).toBe(false);
+	});
+
+	test("coordinator stop succeeds when no active run exists", async () => {
+		// Create a coordinator session
+		const session = makeCoordinatorSession({ state: "working" });
+		saveSessionsToDb([session]);
+
+		// No current-run.txt
+
+		// Stop coordinator (should succeed without errors)
+		const { deps } = makeDeps({ "overstory-test-project-coordinator": true });
+		await expect(captureStdout(() => coordinatorCommand(["stop"], deps))).resolves.toBeDefined();
+
+		// Verify session is completed
+		const sessions = loadSessionsFromDb();
+		expect(sessions[0]?.state).toBe("completed");
+	});
+
+	test("coordinator stop succeeds when current-run.txt is empty", async () => {
+		// Create a coordinator session
+		const session = makeCoordinatorSession({ state: "working" });
+		saveSessionsToDb([session]);
+
+		// Write empty current-run.txt
+		await Bun.write(join(overstoryDir, "current-run.txt"), "");
+
+		// Stop coordinator (should succeed without errors)
+		const { deps } = makeDeps({ "overstory-test-project-coordinator": true });
+		await expect(captureStdout(() => coordinatorCommand(["stop"], deps))).resolves.toBeDefined();
+
+		// Verify session is completed
+		const sessions = loadSessionsFromDb();
+		expect(sessions[0]?.state).toBe("completed");
+	});
+
+	test("--json output includes runCompleted field", async () => {
+		// Create a coordinator session
+		const session = makeCoordinatorSession({ state: "working" });
+		saveSessionsToDb([session]);
+
+		// Create a run in RunStore
+		const dbPath = join(overstoryDir, "sessions.db");
+		const runStore = createRunStore(dbPath);
+		runStore.createRun({
+			id: "run-test-456",
+			startedAt: new Date().toISOString(),
+			coordinatorSessionId: null,
+			status: "active",
+		});
+		runStore.close();
+
+		// Write current-run.txt
+		await Bun.write(join(overstoryDir, "current-run.txt"), "run-test-456");
+
+		// Stop coordinator with --json
+		const { deps } = makeDeps({ "overstory-test-project-coordinator": true });
+		const output = await captureStdout(() => coordinatorCommand(["stop", "--json"], deps));
+
+		// Verify output includes runCompleted: true
+		const parsed = JSON.parse(output) as Record<string, unknown>;
+		expect(parsed.runCompleted).toBe(true);
+	});
+
+	test("--json output includes runCompleted:false when no run", async () => {
+		// Create a coordinator session
+		const session = makeCoordinatorSession({ state: "working" });
+		saveSessionsToDb([session]);
+
+		// No current-run.txt
+
+		// Stop coordinator with --json
+		const { deps } = makeDeps({ "overstory-test-project-coordinator": true });
+		const output = await captureStdout(() => coordinatorCommand(["stop", "--json"], deps));
+
+		// Verify output includes runCompleted: false
+		const parsed = JSON.parse(output) as Record<string, unknown>;
+		expect(parsed.runCompleted).toBe(false);
 	});
 });
 
