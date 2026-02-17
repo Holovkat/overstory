@@ -24,6 +24,7 @@ import { createMetricsStore } from "../metrics/store.ts";
 import { estimateCost, parseTranscriptUsage } from "../metrics/transcript.ts";
 import { createMulchClient, type MulchClient } from "../mulch/client.ts";
 import { openSessionStore } from "../sessions/compat.ts";
+import { createRunStore } from "../sessions/store.ts";
 import type { AgentSession } from "../types.ts";
 
 /**
@@ -565,6 +566,37 @@ export async function logCommand(args: string[]): Promise<void> {
 
 				// Record session metrics (with optional token data from transcript)
 				if (agentSession) {
+					// Auto-complete the current run when the coordinator exits.
+					// This handles the case where the user closes the tmux window
+					// without running `overstory coordinator stop`.
+					if (agentSession.capability === "coordinator") {
+						try {
+							const currentRunPath = join(config.project.root, ".overstory", "current-run.txt");
+							const currentRunFile = Bun.file(currentRunPath);
+							if (await currentRunFile.exists()) {
+								const runId = (await currentRunFile.text()).trim();
+								if (runId.length > 0) {
+									const runStore = createRunStore(
+										join(config.project.root, ".overstory", "sessions.db"),
+									);
+									try {
+										runStore.completeRun(runId, "completed");
+									} finally {
+										runStore.close();
+									}
+									const { unlink: unlinkFile } = await import("node:fs/promises");
+									try {
+										await unlinkFile(currentRunPath);
+									} catch {
+										// File may already be gone
+									}
+								}
+							}
+						} catch {
+							// Non-fatal: run completion should not break session-end handling
+						}
+					}
+
 					try {
 						const metricsDbPath = join(config.project.root, ".overstory", "metrics.db");
 						const metricsStore = createMetricsStore(metricsDbPath);

@@ -8,7 +8,7 @@ import { createMailClient } from "../mail/client.ts";
 import { createMailStore } from "../mail/store.ts";
 import { createMetricsStore } from "../metrics/store.ts";
 import type { MulchClient } from "../mulch/client.ts";
-import { createSessionStore } from "../sessions/store.ts";
+import { createRunStore, createSessionStore } from "../sessions/store.ts";
 import type { AgentSession, MulchLearnResult, StoredEvent } from "../types.ts";
 import { autoRecordExpertise, logCommand } from "./log.ts";
 
@@ -381,6 +381,202 @@ describe("logCommand", () => {
 
 		expect(updatedSession).toBeDefined();
 		expect(updatedSession?.state).toBe("working");
+	});
+
+	describe("session-end coordinator run completion", () => {
+		test("session-end auto-completes the active run for coordinator agent", async () => {
+			// Create sessions.db with coordinator and a run
+			const dbPath = join(tempDir, ".overstory", "sessions.db");
+			const sessionStoreLocal = createSessionStore(dbPath);
+			sessionStoreLocal.upsert({
+				id: "session-coord-run",
+				agentName: "coordinator",
+				capability: "coordinator",
+				worktreePath: tempDir,
+				branchName: "main",
+				beadId: "",
+				tmuxSession: "overstory-coordinator",
+				state: "working",
+				pid: 11111,
+				parentAgent: null,
+				depth: 0,
+				runId: "run-test-001",
+				startedAt: new Date().toISOString(),
+				lastActivity: new Date().toISOString(),
+				escalationLevel: 0,
+				stalledSince: null,
+			});
+			sessionStoreLocal.close();
+
+			// Create the run
+			const runStore = createRunStore(dbPath);
+			runStore.createRun({
+				id: "run-test-001",
+				startedAt: new Date().toISOString(),
+				coordinatorSessionId: "session-coord-run",
+				status: "active",
+			});
+			runStore.close();
+
+			// Write current-run.txt
+			const currentRunPath = join(tempDir, ".overstory", "current-run.txt");
+			await Bun.write(currentRunPath, "run-test-001");
+
+			// Verify current-run.txt exists before test
+			expect(await Bun.file(currentRunPath).exists()).toBe(true);
+
+			// Call session-end
+			await logCommand(["session-end", "--agent", "coordinator"]);
+
+			// Verify: run status is "completed" in RunStore
+			const runStoreRead = createRunStore(dbPath);
+			const run = runStoreRead.getRun("run-test-001");
+			runStoreRead.close();
+
+			expect(run).toBeDefined();
+			expect(run?.status).toBe("completed");
+			expect(run?.completedAt).toBeTruthy();
+
+			// Verify: current-run.txt is deleted (create fresh file reference)
+			expect(await Bun.file(currentRunPath).exists()).toBe(false);
+		});
+
+		test("session-end does not fail when no active run for coordinator", async () => {
+			// Create a coordinator session but no current-run.txt
+			const dbPath = join(tempDir, ".overstory", "sessions.db");
+			const sessionStoreLocal = createSessionStore(dbPath);
+			sessionStoreLocal.upsert({
+				id: "session-coord-no-run",
+				agentName: "coordinator-no-run",
+				capability: "coordinator",
+				worktreePath: tempDir,
+				branchName: "main",
+				beadId: "",
+				tmuxSession: "overstory-coordinator-no-run",
+				state: "working",
+				pid: 11112,
+				parentAgent: null,
+				depth: 0,
+				runId: null,
+				startedAt: new Date().toISOString(),
+				lastActivity: new Date().toISOString(),
+				escalationLevel: 0,
+				stalledSince: null,
+			});
+			sessionStoreLocal.close();
+
+			// Call session-end (should not throw)
+			await expect(async () => {
+				await logCommand(["session-end", "--agent", "coordinator-no-run"]);
+			}).not.toThrow();
+		});
+
+		test("session-end does not complete run for non-coordinator agents", async () => {
+			// Create a builder session, create a run, write current-run.txt
+			const dbPath = join(tempDir, ".overstory", "sessions.db");
+			const sessionStoreLocal = createSessionStore(dbPath);
+			sessionStoreLocal.upsert({
+				id: "session-builder-run",
+				agentName: "test-builder",
+				capability: "builder",
+				worktreePath: tempDir,
+				branchName: "builder-branch",
+				beadId: "bead-builder-001",
+				tmuxSession: "overstory-builder",
+				state: "working",
+				pid: 11113,
+				parentAgent: null,
+				depth: 2,
+				runId: "run-test-002",
+				startedAt: new Date().toISOString(),
+				lastActivity: new Date().toISOString(),
+				escalationLevel: 0,
+				stalledSince: null,
+			});
+			sessionStoreLocal.close();
+
+			// Create the run
+			const runStore = createRunStore(dbPath);
+			runStore.createRun({
+				id: "run-test-002",
+				startedAt: new Date().toISOString(),
+				coordinatorSessionId: "session-coord-run",
+				status: "active",
+			});
+			runStore.close();
+
+			// Write current-run.txt
+			await Bun.write(join(tempDir, ".overstory", "current-run.txt"), "run-test-002");
+
+			// Call session-end for builder
+			await logCommand(["session-end", "--agent", "test-builder"]);
+
+			// Verify: run status remains "active"
+			const runStoreRead = createRunStore(dbPath);
+			const run = runStoreRead.getRun("run-test-002");
+			runStoreRead.close();
+
+			expect(run).toBeDefined();
+			expect(run?.status).toBe("active");
+			expect(run?.completedAt).toBeNull();
+
+			// Verify: current-run.txt still exists
+			const currentRunFile = Bun.file(join(tempDir, ".overstory", "current-run.txt"));
+			expect(await currentRunFile.exists()).toBe(true);
+		});
+
+		test("session-end handles already-completed run gracefully", async () => {
+			// Create a coordinator session, create a run that is already completed
+			const dbPath = join(tempDir, ".overstory", "sessions.db");
+			const sessionStoreLocal = createSessionStore(dbPath);
+			sessionStoreLocal.upsert({
+				id: "session-coord-completed",
+				agentName: "coordinator-completed",
+				capability: "coordinator",
+				worktreePath: tempDir,
+				branchName: "main",
+				beadId: "",
+				tmuxSession: "overstory-coordinator-completed",
+				state: "working",
+				pid: 11114,
+				parentAgent: null,
+				depth: 0,
+				runId: "run-test-003",
+				startedAt: new Date().toISOString(),
+				lastActivity: new Date().toISOString(),
+				escalationLevel: 0,
+				stalledSince: null,
+			});
+			sessionStoreLocal.close();
+
+			// Create the run already completed
+			const runStore = createRunStore(dbPath);
+			runStore.createRun({
+				id: "run-test-003",
+				startedAt: new Date().toISOString(),
+				coordinatorSessionId: "session-coord-completed",
+				status: "active",
+			});
+			// Complete it immediately
+			runStore.completeRun("run-test-003", "completed");
+			runStore.close();
+
+			// Write current-run.txt
+			await Bun.write(join(tempDir, ".overstory", "current-run.txt"), "run-test-003");
+
+			// Call session-end (should not throw — completeRun is idempotent)
+			await expect(async () => {
+				await logCommand(["session-end", "--agent", "coordinator-completed"]);
+			}).not.toThrow();
+
+			// Verify: run is still completed
+			const runStoreRead = createRunStore(dbPath);
+			const run = runStoreRead.getRun("run-test-003");
+			runStoreRead.close();
+
+			expect(run).toBeDefined();
+			expect(run?.status).toBe("completed");
+		});
 	});
 
 	test("session-end writes pending-nudge marker for coordinator when lead completes", async () => {
