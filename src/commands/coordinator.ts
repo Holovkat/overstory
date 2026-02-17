@@ -20,6 +20,7 @@ import { createManifestLoader, resolveModel } from "../agents/manifest.ts";
 import { loadConfig } from "../config.ts";
 import { AgentError, ValidationError } from "../errors.ts";
 import { openSessionStore } from "../sessions/compat.ts";
+import { createRunStore } from "../sessions/store.ts";
 import type { AgentSession } from "../types.ts";
 import { isProcessRunning } from "../watchdog/health.ts";
 import { createSession, isSessionAlive, killSession, sendKeys } from "../worktree/tmux.ts";
@@ -435,6 +436,7 @@ async function startCoordinator(args: string[], deps: CoordinatorDeps = {}): Pro
  * 1. Find the active coordinator session
  * 2. Kill the tmux session (with process tree cleanup)
  * 3. Mark session as completed in SessionStore
+ * 4. Auto-complete the active run (if current-run.txt exists)
  */
 async function stopCoordinator(args: string[], deps: CoordinatorDeps = {}): Promise<void> {
 	const tmux = deps._tmux ?? { createSession, isSessionAlive, killSession, sendKeys };
@@ -478,9 +480,35 @@ async function stopCoordinator(args: string[], deps: CoordinatorDeps = {}): Prom
 		store.updateState(COORDINATOR_NAME, "completed");
 		store.updateLastActivity(COORDINATOR_NAME);
 
+		// Auto-complete the current run
+		let runCompleted = false;
+		try {
+			const currentRunPath = join(overstoryDir, "current-run.txt");
+			const currentRunFile = Bun.file(currentRunPath);
+			if (await currentRunFile.exists()) {
+				const runId = (await currentRunFile.text()).trim();
+				if (runId.length > 0) {
+					const runStore = createRunStore(join(overstoryDir, "sessions.db"));
+					try {
+						runStore.completeRun(runId, "completed");
+						runCompleted = true;
+					} finally {
+						runStore.close();
+					}
+					try {
+						await unlink(currentRunPath);
+					} catch {
+						// File may already be gone
+					}
+				}
+			}
+		} catch {
+			// Non-fatal: run completion should not break coordinator stop
+		}
+
 		if (json) {
 			process.stdout.write(
-				`${JSON.stringify({ stopped: true, sessionId: session.id, watchdogStopped, monitorStopped })}\n`,
+				`${JSON.stringify({ stopped: true, sessionId: session.id, watchdogStopped, monitorStopped, runCompleted })}\n`,
 			);
 		} else {
 			process.stdout.write(`Coordinator stopped (session: ${session.id})\n`);
@@ -493,6 +521,11 @@ async function stopCoordinator(args: string[], deps: CoordinatorDeps = {}): Prom
 				process.stdout.write("Monitor stopped\n");
 			} else {
 				process.stdout.write("No monitor running\n");
+			}
+			if (runCompleted) {
+				process.stdout.write("Run completed\n");
+			} else {
+				process.stdout.write("No active run\n");
 			}
 		}
 	} finally {
