@@ -26,6 +26,31 @@ interface CommandDef {
 
 export const COMMANDS: readonly CommandDef[] = [
 	{
+		name: "agents",
+		desc: "Discover and query agents",
+		flags: [
+			{ name: "--json", desc: "JSON output" },
+			{ name: "--help", desc: "Show help" },
+		],
+		subcommands: [
+			{
+				name: "discover",
+				desc: "Find active agents by capability",
+				flags: [
+					{
+						name: "--capability",
+						desc: "Filter by capability",
+						takesValue: true,
+						values: ["builder", "scout", "reviewer", "lead", "merger", "coordinator", "supervisor"],
+					},
+					{ name: "--all", desc: "Include completed and zombie agents" },
+					{ name: "--json", desc: "JSON output" },
+					{ name: "--help", desc: "Show help" },
+				],
+			},
+		],
+	},
+	{
 		name: "init",
 		desc: "Initialize .overstory/ in current project",
 		flags: [

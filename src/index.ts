@@ -7,6 +7,7 @@
  * Usage: overstory <command> [args...]
  */
 
+import { agentsCommand } from "./commands/agents.ts";
 import { cleanCommand } from "./commands/clean.ts";
 import { completionsCommand } from "./commands/completions.ts";
 import { coordinatorCommand } from "./commands/coordinator.ts";
@@ -46,6 +47,7 @@ const HELP = `overstory v${VERSION} — Multi-agent orchestration for Claude Cod
 Usage: overstory <command> [args...]
 
 Commands:
+  agents <sub>            Discover and query agents (discover)
   init                    Initialize .overstory/ in current project
   sling <task-id>         Spawn a worker agent
   spec <sub>              Manage task specs (write)
@@ -84,6 +86,7 @@ Options:
 Run 'overstory <command> --help' for command-specific help.`;
 
 const COMMANDS = [
+	"agents",
 	"init",
 	"sling",
 	"spec",
@@ -182,6 +185,9 @@ async function main(): Promise<void> {
 	}
 
 	switch (command) {
+		case "agents":
+			await agentsCommand(commandArgs);
+			break;
 		case "init":
 			await initCommand(commandArgs);
 			break;

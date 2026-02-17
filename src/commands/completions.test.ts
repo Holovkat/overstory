@@ -12,12 +12,13 @@ import {
 } from "./completions.ts";
 
 describe("COMMANDS array", () => {
-	it("should have exactly 28 commands", () => {
-		expect(COMMANDS).toHaveLength(28);
+	it("should have exactly 29 commands", () => {
+		expect(COMMANDS).toHaveLength(29);
 	});
 
 	it("should include all expected command names", () => {
 		const names = COMMANDS.map((c) => c.name);
+		expect(names).toContain("agents");
 		expect(names).toContain("init");
 		expect(names).toContain("sling");
 		expect(names).toContain("prime");
@@ -57,7 +58,7 @@ describe("generateBash", () => {
 		expect(script).toContain("_init_completion");
 	});
 
-	it("should include all 26 command names", () => {
+	it("should include all 27 command names", () => {
 		const script = generateBash();
 		for (const cmd of COMMANDS) {
 			expect(script).toContain(cmd.name);
@@ -91,7 +92,7 @@ describe("generateZsh", () => {
 		expect(script).toContain("_arguments");
 	});
 
-	it("should include all 26 command names", () => {
+	it("should include all 27 command names", () => {
 		const script = generateZsh();
 		for (const cmd of COMMANDS) {
 			expect(script).toContain(cmd.name);
@@ -121,7 +122,7 @@ describe("generateFish", () => {
 		expect(script).toContain("__fish_use_subcommand");
 	});
 
-	it("should include all 26 command names", () => {
+	it("should include all 27 command names", () => {
 		const script = generateFish();
 		for (const cmd of COMMANDS) {
 			expect(script).toContain(cmd.name);
